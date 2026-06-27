@@ -6,6 +6,17 @@ using namespace fs;
 #include <lvgl.h>
 #if LV_USE_TFT_ESPI
 #include <TFT_eSPI.h>
+static TFT_eSPI tft(240, 240);
+
+static void my_disp_flush_dma(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map) {
+    uint16_t w = area->x2 - area->x1 + 1;
+    uint16_t h = area->y2 - area->y1 + 1;
+    tft.startWrite();
+    tft.setAddrWindow(area->x1, area->y1, w, h);
+    tft.pushColors((uint16_t *)px_map, w * h, true);
+    tft.endWrite();
+    lv_display_flush_ready(disp);
+}
 #endif
 #include <Preferences.h>
 #include <time.h>
@@ -247,26 +258,28 @@ void setup() {
     lv_tick_set_cb(my_tick);
     Serial.println("[3] OK");
 
-    Serial.println("[4] lv_tft_espi_create...");
+    Serial.println("[4] display init...");
     lv_display_t *disp;
 #if LV_USE_TFT_ESPI
-    disp = lv_tft_espi_create(TFT_HOR_RES, TFT_VER_RES, draw_buf_1, sizeof(draw_buf_1));
-    Serial.printf("[4] disp = %p\n", (void*)disp);
-    if (!disp) {
-        Serial.println("[4] FATAL: display creation failed!");
-        while(1) { delay(1000); }
-    }
+    tft.begin();
+    tft.setRotation(TFT_ROTATION);
+    tft.fillScreen(TFT_BLACK);
+    disp = lv_display_create(TFT_HOR_RES, TFT_VER_RES);
+    lv_display_set_flush_cb(disp, my_disp_flush_dma);
     lv_display_set_rotation(disp, TFT_ROTATION);
-    // Double-buffer: render into buf_2 while buf_1 flushes
     lv_display_set_buffers(disp, draw_buf_1, draw_buf_2, sizeof(draw_buf_1),
         LV_DISPLAY_RENDER_MODE_PARTIAL);
-    Serial.printf("[4] Double buffer: buf1=%p buf2=%p size=%u\n",
-        draw_buf_1, draw_buf_2, sizeof(draw_buf_1));
+    Serial.printf("[4] disp=%p DMA flush  buf1=%p buf2=%p size=%u\n",
+        disp, draw_buf_1, draw_buf_2, sizeof(draw_buf_1));
 #else
     disp = lv_display_create(TFT_HOR_RES, TFT_VER_RES);
     lv_display_set_flush_cb(disp, my_disp_flush);
     lv_display_set_buffers(disp, draw_buf_1, NULL, sizeof(draw_buf_1), LV_DISPLAY_RENDER_MODE_PARTIAL);
 #endif
+    if (!disp) {
+        Serial.println("[4] FATAL: display creation failed!");
+        while(1) { delay(1000); }
+    }
     Serial.println("[4] OK");
 
     Serial.println("[5] touch input...");
