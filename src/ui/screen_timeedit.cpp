@@ -17,7 +17,6 @@ static void timeedit_up_cb(lv_event_t *e) {
     int *vals[5] = {&timeedit_hour, &timeedit_min, &timeedit_day, &timeedit_month, &timeedit_year};
     lv_obj_t **labels[5] = {&te_hour_label, &te_min_label, &te_day_label, &te_mon_label, &te_year_label};
     const char *fmts[5] = {"%02d", "%02d", "%02d", "%02d", "%04d"};
-
     int f = timeedit_field;
     (*(vals[f]))++;
     if (*(vals[f]) > max_vals[f]) *(vals[f]) = min_vals[f];
@@ -29,7 +28,6 @@ static void timeedit_down_cb(lv_event_t *e) {
     int *vals[5] = {&timeedit_hour, &timeedit_min, &timeedit_day, &timeedit_month, &timeedit_year};
     lv_obj_t **labels[5] = {&te_hour_label, &te_min_label, &te_day_label, &te_mon_label, &te_year_label};
     const char *fmts[5] = {"%02d", "%02d", "%02d", "%02d", "%04d"};
-
     int f = timeedit_field;
     (*(vals[f]))--;
     if (*(vals[f]) < min_vals[f]) *(vals[f]) = max_vals[f];
@@ -40,9 +38,6 @@ static void timeedit_select_field_cb(lv_event_t *e) {
 }
 static void timeedit_save_cb(lv_event_t *e) {
     if (lv_screen_active() != scr_timeedit) return;
-#if NAV_DEBUG
-    Serial.println("[CLICK] timeedit save -> pop_modal");
-#endif
     hour_ = timeedit_hour;
     minute_ = timeedit_min;
     second_ = 0;
@@ -65,7 +60,6 @@ void create_screen_timeedit(void) {
 
     create_title(scr_timeedit, "\330\266\330\250\330\267 \330\247\331\204\331\210\331\202\330\252");
 
-    const char *val_fmts[5] = {"%02d", "%02d", "%02d", "%02d", "%04d"};
     lv_obj_t **val_labels[5] = {&te_hour_label, &te_min_label, &te_day_label, &te_mon_label, &te_year_label};
     const char *val_names[5] = {"H", "M", "D", "M", "Y"};
     int val_x[5] = {60, 140, 40, 100, 170};

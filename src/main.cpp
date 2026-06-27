@@ -31,9 +31,6 @@ Preferences prefs;
 int   hour_ = 8, minute_ = 0, second_ = 0;
 int   day_  = 1, month_  = 1, year_ = 2026;
 
-uint32_t tasbeehCount   = 0;
-uint32_t isteghfarCount = 0;
-
 Reminder reminders[MAX_REMINDERS];
 bool     reminderFired[MAX_REMINDERS];
 int      popupRemIdx = 0;
@@ -193,8 +190,9 @@ static void battery_timer_cb(lv_timer_t *timer) {
 #define TFT_HOR_RES   240
 #define TFT_VER_RES   240
 #define TFT_ROTATION  LV_DISPLAY_ROTATION_0
-#define DRAW_BUF_SIZE (TFT_HOR_RES * TFT_VER_RES / 10 * (LV_COLOR_DEPTH / 8))
-uint32_t draw_buf[DRAW_BUF_SIZE / 4];
+#define DRAW_BUF_SIZE (TFT_HOR_RES * TFT_VER_RES / 2 * (LV_COLOR_DEPTH / 8))
+uint32_t draw_buf_1[DRAW_BUF_SIZE / 4];
+uint32_t draw_buf_2[DRAW_BUF_SIZE / 4];
 
 #if LV_USE_LOG != 0
 void my_print(lv_log_level_t level, const char *buf) {
@@ -233,7 +231,7 @@ void setup() {
     Serial.println("[2] prefs.begin...");
     prefs.begin("watch", false);
     tasbeehCount   = prefs.getUInt("tasbeeh", 0);
-    isteghfarCount = prefs.getUInt("isteghfar", 0);
+    istighfarCount = prefs.getUInt("isteghfar", 0);
     loadReminders();
     loadTime();
     Serial.println("[2] OK");
@@ -252,17 +250,22 @@ void setup() {
     Serial.println("[4] lv_tft_espi_create...");
     lv_display_t *disp;
 #if LV_USE_TFT_ESPI
-    disp = lv_tft_espi_create(TFT_HOR_RES, TFT_VER_RES, draw_buf, sizeof(draw_buf));
+    disp = lv_tft_espi_create(TFT_HOR_RES, TFT_VER_RES, draw_buf_1, sizeof(draw_buf_1));
     Serial.printf("[4] disp = %p\n", (void*)disp);
     if (!disp) {
         Serial.println("[4] FATAL: display creation failed!");
         while(1) { delay(1000); }
     }
     lv_display_set_rotation(disp, TFT_ROTATION);
+    // Double-buffer: render into buf_2 while buf_1 flushes
+    lv_display_set_buffers(disp, draw_buf_1, draw_buf_2, sizeof(draw_buf_1),
+        LV_DISPLAY_RENDER_MODE_PARTIAL);
+    Serial.printf("[4] Double buffer: buf1=%p buf2=%p size=%u\n",
+        draw_buf_1, draw_buf_2, sizeof(draw_buf_1));
 #else
     disp = lv_display_create(TFT_HOR_RES, TFT_VER_RES);
     lv_display_set_flush_cb(disp, my_disp_flush);
-    lv_display_set_buffers(disp, draw_buf, NULL, sizeof(draw_buf), LV_DISPLAY_RENDER_MODE_PARTIAL);
+    lv_display_set_buffers(disp, draw_buf_1, NULL, sizeof(draw_buf_1), LV_DISPLAY_RENDER_MODE_PARTIAL);
 #endif
     Serial.println("[4] OK");
 
@@ -311,7 +314,7 @@ void setup() {
 
     clock_timer_obj = lv_timer_create(clock_timer_cb, 1000, NULL);
     update_tasbeeh_display();
-    update_isteghfar_display();
+    update_istighfar_display();
 
     if (settings_ip_label) {
         lv_label_set_text(settings_ip_label, "WiFi disabled");

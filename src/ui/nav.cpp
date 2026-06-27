@@ -2,8 +2,8 @@
 #include <Arduino.h>
 
 // ── Ring state ───────────────────────────────────────────────
-//   [0] Home  ←→  [1] Thiker  ←→  [2] Tasbeeh  ←→  [3] Isteghfar  ←→  [0]
-lv_obj_t *ring_screens[4];
+//   [0] Home  ←→  [1] Istighfar  ←→  [2] Tasbeeh  ←→  [0]
+lv_obj_t *ring_screens[RING_LEN];
 static int current_ring_idx = 0;
 
 void navigate_to_ring(int idx) {
