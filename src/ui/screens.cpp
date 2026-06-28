@@ -52,8 +52,10 @@ void screens_init(void) {
     for (int m = 0; m < 2; m++) {
         lv_obj_t *ms = modal_screens[m];
         lv_obj_add_event_cb(ms, gesture_modal_cb, LV_EVENT_GESTURE, NULL);
-        lv_obj_add_flag(ms, LV_OBJ_FLAG_CLICKABLE);
-        lv_obj_add_event_cb(ms, modal_bg_tap_cb, LV_EVENT_CLICKED, NULL);
+        if (ms != scr_timeedit) {
+            lv_obj_add_flag(ms, LV_OBJ_FLAG_CLICKABLE);
+            lv_obj_add_event_cb(ms, modal_bg_tap_cb, LV_EVENT_CLICKED, NULL);
+        }
         uint32_t child_cnt = lv_obj_get_child_cnt(ms);
         for (uint32_t c = 0; c < child_cnt; c++) {
             lv_obj_t *child = lv_obj_get_child(ms, c);

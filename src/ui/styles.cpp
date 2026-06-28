@@ -1,5 +1,10 @@
 #include "styles.h"
 
+LV_FONT_DECLARE(font_reem_kufi_72);
+LV_FONT_DECLARE(font_reem_kufi_48);
+LV_FONT_DECLARE(font_alexandria_16);
+LV_FONT_DECLARE(font_alexandria_28);
+
 // ── Colour definitions ────────────────────────────────────────
 lv_color_t color_bg        = {0};
 lv_color_t color_surface   = {0};
@@ -8,6 +13,7 @@ lv_color_t color_ivory     = {0};
 lv_color_t color_cream     = {0};
 lv_color_t color_cream_dim = {0};
 lv_color_t color_teal      = {0};
+lv_color_t color_blue       = {0};
 lv_color_t color_border    = {0};
 lv_color_t color_red       = {0};
 lv_color_t color_white     = {0};
@@ -38,7 +44,8 @@ void ui_styles_init(void)
     color_ivory     = lv_color_hex(0xf6e6b3);
     color_cream     = lv_color_hex(0xe9d9a8);
     color_cream_dim = lv_color_hex(0x7a6e56);
-    color_teal      = lv_color_hex(0x7fd6a3);
+    color_teal      = lv_color_hex(0x33cc55);  // green
+    color_blue      = lv_color_hex(0x7fd6a3);  // sky blue
     color_border    = lv_color_hex(0x2a2410);
     color_red       = lv_color_hex(0xff4444);
     color_white     = lv_color_hex(0xf6e6b3);
@@ -54,37 +61,37 @@ void ui_styles_init(void)
 
     // ── Large clock digits "23:13" ────────────────────────────
     lv_style_init(&style_clock);
-    lv_style_set_text_font(&style_clock, &lv_font_montserrat_48);
+    lv_style_set_text_font(&style_clock, &font_reem_kufi_72);
     lv_style_set_text_color(&style_clock, color_ivory);
     lv_style_set_text_align(&style_clock, LV_TEXT_ALIGN_CENTER);
 
     // ── Screen title (gold, Arabic) ───────────────────────────
     lv_style_init(&style_title);
-    lv_style_set_text_font(&style_title, &lv_font_dejavu_16_persian_hebrew);
+    lv_style_set_text_font(&style_title, &font_alexandria_16);
     lv_style_set_text_color(&style_title, color_gold);
     lv_style_set_text_align(&style_title, LV_TEXT_ALIGN_CENTER);
 
     // ── Small label (muted) ───────────────────────────────────
     lv_style_init(&style_label_sm);
-    lv_style_set_text_font(&style_label_sm, &lv_font_montserrat_14);
+    lv_style_set_text_font(&style_label_sm, &font_alexandria_16);
     lv_style_set_text_color(&style_label_sm, color_cream_dim);
     lv_style_set_text_align(&style_label_sm, LV_TEXT_ALIGN_CENTER);
 
     // ── Normal Arabic body text (cream) ──────────────────────
     lv_style_init(&style_label_ar);
-    lv_style_set_text_font(&style_label_ar, &lv_font_dejavu_16_persian_hebrew);
+    lv_style_set_text_font(&style_label_ar, &font_alexandria_16);
     lv_style_set_text_color(&style_label_ar, color_cream);
     lv_style_set_text_align(&style_label_ar, LV_TEXT_ALIGN_CENTER);
 
     // ── Large Arabic phrase  "أَستَغفِرُ الله" ─────────────────
     lv_style_init(&style_label_ar_lg);
-    lv_style_set_text_font(&style_label_ar_lg, &lv_font_dejavu_16_persian_hebrew);
+    lv_style_set_text_font(&style_label_ar_lg, &font_alexandria_28);
     lv_style_set_text_color(&style_label_ar_lg, color_ivory);
     lv_style_set_text_align(&style_label_ar_lg, LV_TEXT_ALIGN_CENTER);
 
     // ── Big counter digit e.g. "0" ────────────────────────────
     lv_style_init(&style_counter_val);
-    lv_style_set_text_font(&style_counter_val, &lv_font_montserrat_48);
+    lv_style_set_text_font(&style_counter_val, &font_reem_kufi_48);
     lv_style_set_text_color(&style_counter_val, color_ivory);
     lv_style_set_text_align(&style_counter_val, LV_TEXT_ALIGN_CENTER);
 
@@ -109,7 +116,7 @@ void ui_styles_init(void)
     lv_style_set_radius(&style_pill_border, LV_RADIUS_CIRCLE);
     lv_style_set_pad_hor(&style_pill_border, 12);
     lv_style_set_pad_ver(&style_pill_border, 4);
-    lv_style_set_text_font(&style_pill_border, &lv_font_dejavu_16_persian_hebrew);
+    lv_style_set_text_font(&style_pill_border, &font_alexandria_16);
     lv_style_set_text_color(&style_pill_border, color_cream);
     lv_style_set_text_align(&style_pill_border, LV_TEXT_ALIGN_CENTER);
 

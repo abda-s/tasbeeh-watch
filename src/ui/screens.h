@@ -25,7 +25,9 @@ extern lv_obj_t *home_date_label;       // "12 ربيع الآخر 1447"
 extern lv_obj_t *home_prayer_label;     // "الصلاة القادمة · العصر 15:42"
 extern lv_obj_t *home_bat_label;        // battery %
 extern lv_obj_t *home_sec_arc;          // seconds sweep arc
+extern lv_obj_t *home_ampm_label;       // AM/PM indicator next to clock
 extern lv_obj_t *home_sec_label;        // "50 ثانية"
+extern int current_ring_idx;            // ring navigation index
 
 // ── Istighfar screen widgets ──────────────────────────────────
 extern lv_obj_t *istighfar_arc;
@@ -40,6 +42,7 @@ extern lv_obj_t *tasbeeh_title_label;
 extern lv_obj_t *tasbeeh_of_label;
 extern lv_obj_t *tasbeeh_dots[3];
 extern uint32_t  tasbeehCount;
+extern int       tasbeeh_phrase_idx;
 
 // ── Settings / TimeEdit ───────────────────────────────────────
 extern lv_obj_t *settings_ip_label;
@@ -49,6 +52,8 @@ extern lv_obj_t *te_day_label;
 extern lv_obj_t *te_mon_label;
 extern lv_obj_t *te_year_label;
 extern int timeedit_hour, timeedit_min, timeedit_day, timeedit_month, timeedit_year, timeedit_field;
+extern int timeedit_ampm;
+void update_timeedit_highlight(void);
 
 // ── Navigation helpers ────────────────────────────────────────
 void navigate_to_ring(int idx);

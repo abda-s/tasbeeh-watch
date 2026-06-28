@@ -1,318 +1,313 @@
 ﻿# Tasbeeh Smartwatch — ESP32-S3 Touch LCD 1.28
 
-A complete smartwatch application for Islamic prayer counting (tasbeeh/isteghfar) with
-clock, reminders, WiFi-synced time, and a browser-based configuration portal —
-all built with LVGL v9 on the Waveshare ESP32-S3-Touch-LCD-1.28.
+Islamic prayer counter smartwatch with clock, counters, and settings — built on
+LVGL v9, TFT_eSPI, and the Waveshare ESP32-S3-Touch-LCD-1.28 round display.
 
 ---
 
-## Screenshots (conceptual)
+## Screens
 
 ```
-┌──────────────┐    ┌──────────────┐    ┌──────────────┐    ┌──────────────┐
-│ [⚙]      🔋  │    │   القائمة    │    │   تسبيح      │    │ ╔══════════╗  │
-│              │    │              │    │              │    │ ║ تذكير    ║  │
-│    08:42     │    │  [تسبيح   ]  │    │   ╭───╮      │    │ ║  08:00   ║  │
-│  16/06/2026  │    │              │    │  ╱     ╲     │    │ ║ صلاة     ║  │
-│              │    │ [استغفار  ]  │    │ │  33  │     │    │ ║ الفجر    ║  │
-│         [→]  │    │              │    │  ╲     ╱     │    │ ╚══════════╝  │
-│              │    │              │    │   ╰───╯      │    │              │
-│              │    │              │    │الإجمالي:4210 │    │ [تم] [تأجيل] │
-└──────────────┘    └──────────────┘    │  [اضغط]      │    └──────────────┘
-    HOME              THIKER             └──────────────┘      REMINDER
-                                          COUNTER
+         HOME                          ISTIGHFAR                      TASBEEH
+    ┌──────────────┐              ┌──────────────┐              ┌──────────────┐
+    │ ◂   [⚙]     │              │   ╭─────╮    │              │   ╭─────╮    │
+    │              │              │  ╱ green ╲   │              │  ╱  blue ╲   │
+    │   السبت      │              │ │  arc    │  │              │ │  arc    │  │
+    │    08        │              │  ╲       ╱   │              │  ╲       ╱   │
+    │    30    م   │              │   ╰─────╯    │              │   ╰─────╯    │
+    │              │              │              │              │              │
+    │ 12 يناير 2026│              │   استغفار    │              │   تسبيح      │
+    │              │              │              │              │              │
+    │  85%         │              │ أستغفر الله  │              │ سبحان الله   │
+    └──────────────┘              │              │              │              │
+                                  │      0       │              │      0       │
+    ◂ SWIPE ▸                     │              │              │              │
+    arrows show                   │من 100·اضغط   │              │اضغط·من 33    │
+    more screens                  └──────────────┘              │   ■ ■ ■      │
+                                                               └──────────────┘
 ```
+
+**3-screen ring:** Home ↔ Istighfar ↔ Tasbeeh (swipe left/right)
+**Swipe arrows** (`◂` / `▸`) at screen edges animate subtly to indicate more screens.
+**Modals:** Settings (tap gear or swipe-down from home), TimeEdit (long-press clock) — swipe down or left to dismiss.
+
+### Screen accent colors
+
+| Screen | Color | Hex | Arc / Title |
+|--------|-------|-----|-------------|
+| Home | Gold | `#d4af37` | Seconds arc, day name, AM/PM |
+| Istighfar | Green | `#33cc55` | Progress arc, title |
+| Tasbeeh | Blue | `#7fd6a3` / `#3b82f6` | Progress arc, title, dots |
+
+### Gesture Map
+
+- **Ring screens**: Swipe L/R = navigate ring, swipe **down** (home only) = settings, **long-press** clock = time edit
+- **Modals**: Swipe down = back, swipe **left** = back (timeedit: tap `<` or title also goes back)
+- **Tasbeeh/Istighfar**: Tap anywhere = increment counter
 
 ---
 
-## Folder Structure
+## Project Structure
 
 ```
-esp32-S3-Touch-LCD-1.28-sample-pio-project/
-├── platformio.ini                  # Build config, library deps, build flags
-├── README.md                       # This file
-│
-├── src/
-│   ├── config/
-│   │   ├── CST816S_pin_config.h    # Touch pin definitions (unchanged)
-│   │   └── lv_conf.h               # LVGL v9.2 configuration (1111 lines)
-│   │
-│   ├── ui/
-│   │   ├── styles.h                # Shared color/style declarations
-│   │   ├── styles.cpp              # Style initialization (103 lines)
-│   │   ├── screens.h               # Screen/widget extern declarations
-│   │   └── screens.cpp             # Screen creation + update functions (475 lines)
-│   │
-│   └── main.cpp                    # App entry point: setup, loop, WiFi, NTP,
-│                                     WebServer, LVGL callbacks (573 lines)
-│
-├── boards/                         # Wave share board definition
-├── lib/                            # Empty (all deps via PlatformIO registry)
-├── include/                        # Empty
-└── test/                           # Empty
-
-Total source: ~2,317 lines
-```
-
-### File responsibilities
-
-| File | Lines | What it does |
-|------|-------|--------------|
-| `main.cpp` | 573 | Hardware init (touch, display, battery ADC), LVGL init, WiFi/NTP/webserver setup, clock/reminder/counter timers, all application logic |
-| `ui/screens.h` | 26 | Exports all screen objects and updatable widget pointers |
-| `ui/screens.cpp` | 475 | Builds each screen's widget tree once (labels, buttons, arcs, msgbox), event callbacks for navigation and counter taps, milestone flash effect |
-| `ui/styles.h` | 29 | Exports shared color palette and LVGL style objects |
-| `ui/styles.cpp` | 103 | Initializes all styles: background, clock, titles, buttons, arcs, cards |
-| `lv_conf.h` | 1111 | LVGL build config: fonts, features, BIDI/Arabic, theme, widget enable/disable |
-
----
-
-## How the Architecture Works
-
-### Before → After comparison
-
-The original code (the "template") used **raw TFT_eSPI pixel calls** for everything:
-every screen was a function that called `tft.fillScreen()`, then manually drew every
-rectangle, circle, triangle, and text string with coordinate‑matched hit‑testing in
-`loop()`. There was no concept of a persistent widget — everything was ephemeral pixels.
-
-The LVGL rewrite replaces that entirely with a **persistent widget tree**:
-
-| Concern | Old approach | New approach |
-|---------|-------------|-------------|
-| Screens | `enum Page` + `drawHome()` functions that blast the screen | Static `lv_obj_t*` trees built once in `setup()` |
-| Navigation | Manual `if (x >= N && y >= M)` in `loop()` | `lv_screen_load_anim()` slide/fade transitions |
-| Buttons | Manual coordinate checks, no visual feedback | `lv_btn` objects with built-in pressed states |
-| Clock | Partial redraw via `refreshHomeClock()` (hand‑written twin of `drawHome()`) | `lv_label_set_text_fmt()` in a 1‑second `lv_timer` |
-| Counter ring | 360 `tft.fillCircle()` dots hand‑drawn per update | `lv_arc` widget with anti‑aliased arcs |
-| Reminders | Full‑screen hand‑painted circle page | `lv_msgbox_create(NULL)` modal with backdrop |
-| Battery ADC | 16ms blocking read inside every redraw | 10‑second `lv_timer`, decoupled from render |
-| Animations | None; `delay(300)` for milestone "flash" froze the device | 400ms green flash via one‑shot `lv_timer`, non‑blocking |
-
-### Screen lifecycle
-
-```
-┌──────────┐                              ┌─────────────┐
-│ setup()  │ → builds all 6 screens       │ screens.cpp │
-│          │   (scr_home, scr_thiker,     │             │
-│          │    scr_tasbeeh, etc.)        │ one-time    │
-│          │                              │ constructor │
-│          │ → timers start               │ per screen  │
-└──────────┘                              └─────────────┘
-      │
-      ▼
-┌──────────────┐     tap/swipe     ┌─────────────────┐
-│ lv_screen_   │ ───────────────→  │ lv_screen_load_ │
-│ active()     │ ←───────────────  │ anim(scr,       │
-│              │  (200ms slide)    │   MOVE_LEFT,     │
-│              │                   │   200ms, ...)    │
-└──────────────┘                   └─────────────────┘
-
-Windows are never destroyed. Only the active screen is rendered.
-LVGL automatically tracks dirty regions and repaints only changed pixels.
-```
-
-### Data flow
-
-```
-┌──────────┐   1s timer    ┌──────────────┐   lv_label_set_text_fmt
-│ hour_    │ ───────────→  │ clock_timer_cb│ ──────────────────→ home_clock_label
-│ minute_  │               └──────────────┘                     (dirty rect auto-
-│ second_  │                                                     invalidated)
-└──────────┘
-
-┌──────────┐   tap event   ┌───────────────┐   lv_arc_set_value
-│ tasbeeh  │ ───────────→  │tap_counter_cb  │ ──────────────→ tasbeeh_arc
-│ Count    │               │ (increment,     │   lv_label_set_text_fmt
-│          │               │  save, update)  │ ──────────────→ tasbeeh_counter_label
-└──────────┘               └───────────────┘
-
-┌──────────┐   1s timer    ┌──────────────┐   lv_msgbox_create(NULL)
-│ hour_    │ ───────────→  │checkReminders │ ──────────────→ reminder popup
-│ minute_  │               │ (checked on   │
-│ reminders│               │  second==0)   │
-└──────────┘               └──────────────┘
-```
-
-### Navigation map
-
-```
-               ┌──────────┐
-               │  LOADING  │  (WiFi setup → NTP sync)
-               └────┬─────┘
-                    ▼
-               ┌──────────┐
-      ┌───────│   HOME   │───────┐
-      │       └────┬─────┘       │
-      │            │             │
-      ▼            ▼             ▼
-┌──────────┐ ┌──────────┐ ┌──────────┐
-│ SETTINGS │ │  THIKER  │ │ TIMEEDIT │
-│ (IP,      │ │          │ │          │
-│  config)  │ └────┬─────┘ └──────────┘
-└──────────┘      │
-            ┌─────┴─────┐
-            ▼           ▼
-      ┌──────────┐ ┌──────────────┐
-      │ TASBEEH  │ │  ISTEGHFAR   │
-      │ counter  │ │  counter     │
-      └──────────┘ └──────────────┘
-
-Navigation methods:
-  • Tap icons/buttons → LV_EVENT_CLICKED callback
-  • Swipe left/right → LV_EVENT_GESTURE callback (on counter & thiker screens)
-  • Screen transitions use lv_screen_load_anim() with slide or fade
+src/
+├── main.cpp                      # Hardware init, LVGL setup, timers, loop, battery
+├── config/
+│   ├── CST816S_pin_config.h      # Touch I2C pin definitions
+│   └── lv_conf.h                 # LVGL v9 build configuration
+├── ui/
+│   ├── screens.h                 # Public API — screen pointers, nav, fonts, helpers
+│   ├── screens.cpp               # Global pointers + screens_init()
+│   ├── styles.h / styles.cpp     # Color palette + style definitions
+│   ├── nav.cpp                   # Ring navigation + modal push/pop + gesture handlers
+│   ├── screen_base.cpp           # Shared helpers (make_screen_base, create_title, touch_debug)
+│   ├── screen_home.cpp           # Clock screen: 12h stacked time + AM/PM, day, date, seconds arc, swipe arrows
+│   ├── screen_istighfar.cpp      # Istighfar counter: tap to count, 0→100 green arc
+│   ├── screen_tasbeeh.cpp        # Tasbeeh counter: 3 phrases × 33, blue arc, progress dots, phrase persists across boot
+│   ├── screen_settings.cpp       # Settings (IP display, back button)
+│   └── screen_timeedit.cpp       # 12h time editor: HH:MM AM/PM, DD/MM/YYYY, validation, back arrow
+├── font_reem_kufi_72.c           # Clock digits — Reem Kufi 72px 4bpp
+├── font_reem_kufi_48.c           # Counter digits — Reem Kufi 48px 4bpp
+├── font_alexandria_12.c          # Small labels, AM/PM — Alexandria 12px 2bpp
+├── font_alexandria_16.c          # Titles, day names, hints, theme — Alexandria 16px 2bpp
+└── font_alexandria_28.c          # Arabic phrases — Alexandria 28px 4bpp
 ```
 
 ---
 
-## Research Foundation
+## Font System — How It Works
 
-Before writing any code, we studied how professional LVGL projects are built.
+### The Problem
 
-### Projects studied
+LVGL's Arabic shaper (`LV_USE_ARABIC_PERSIAN_CHARS`) converts base Arabic letters
+to **presentation forms** (contextual shapes for connected writing). These
+presentation forms live at Unicode codepoints U+FB50–U+FDFF and U+FE70–U+FEFF.
 
-| Project | Stars | Hardware | Key takeaway |
-|---------|-------|----------|--------------|
-| [PrintSphere](https://github.com/cptkirki/PrintSphere) | 241 | ESP32‑S3 round AMOLED | Most polished LVGL UI: dark theme, progress ring (`lv_arc`), multi‑page touch nav, web‑configurable colors |
-| [zephyr‑watch](https://github.com/electricalgorithm/zephyr‑watch) | 20 | **Same board** (ESP32‑S3‑Touch‑LCD‑1.28) | Best structural reference: `screens/` + `styles/` directories, work queues for non‑blocking UI, dark theme |
-| [lvgl‑watch](https://github.com/lxydiy/lvgl‑watch) | 59 | ESP32 Open‑Smartwatch | PlatformIO project (same build system), haptic motor support |
-| [esp32‑lvgl‑watchface](https://github.com/fbiego/esp32‑lvgl‑watchface) | 53 | ESP32 240×240 | Watchface rendering on 240×240 displays |
+**Modern TTF fonts** (Reem Kufi, Amiri, Cairo, almost all Google Fonts) store
+presentation form glyphs in OpenType **GSUB tables**, NOT at Unicode codepoints.
+`lv_font_conv` extracts glyphs by **codepoint only** — it can't read GSUB tables.
+Result: the shaper looks for U+FEA1 (beh initial form), the font has no glyph at
+that codepoint → **empty box**.
 
-### LVGL v9.1 docs used
+**Older fonts** (DejaVu, Traditional Arabic, several Microsoft fonts) explicitly
+map presentation form glyphs to Unicode codepoints. They work out-of-the-box.
 
-- **Performance**: partial render mode (buffer = 1/10 screen), `LV_OBJ_STYLE_CACHE`, disabling unused widgets, `LV_DRAW_SW_CIRCLE_CACHE_SIZE`, `lv_snapshot_take()` for static backgrounds
-- **UI/UX**: `lv_screen_load_anim()` for transitions, `lv_anim_t` for smooth value changes, `lv_msgbox_create(NULL)` for modal popups, flex/grid layouts, shadow/radius/gradient style properties
-- **Arabic support**: `LV_USE_BIDI`, `LV_BIDI_BASE_DIR_DEF`, `LV_USE_ARABIC_PERSIAN_CHARS`, DejaVu 16 font
+### The Solution: fonttools Remap
 
-### Modern LVGL UI principles applied
+[fonttools](https://github.com/fonttools/fonttools) reads/writes TTF cmap tables
+in Python. We wrote a script that:
 
-1. **Consistent corner radius** — pill buttons use half‑height radius (26px), cards use 12px
-2. **Depth through shadows** — buttons have `shadow_width: 8`, `shadow_offset_y: 4`
-3. **Typography hierarchy** — exactly 3 font sizes (14/24/42) + Arabic font (16)
-4. **Pressed state feedback** — provided free by LVGL default theme (`LV_THEME_DEFAULT_GROW`)
-5. **Animated transitions** — screens slide (200ms), messages fade in
-6. **Semantic color** — teal = primary action, gold = time/highlight, green = success/milestone, red = low battery
-7. **Single accent** — one teal brand color used everywhere, not different colors per screen
-8. **Dark‑theme baseline** — `LV_THEME_DEFAULT_DARK 1` sets the foundation
+1. Opens the TTF
+2. Examines all glyph names (e.g., `behDotless-ar.init`, `lam-ar.medi`)
+3. Maps each contextual form glyph to its standard Unicode presentation form codepoint
+4. Adds those codepoint→glyph mappings to the font's cmap table
+5. Saves a remapped TTF
+6. Runs `lv_font_conv` on the remapped TTF — now all presentation forms are extractable
+
+This works for **any** modern Arabic font.
+
+### Known quirk: missing isolated forms
+
+Some isolated presentation forms (notably ص U+FEB9 and م U+FEE1) are not in the
+font because the remap script couldn't find matching glyph names (`sad-ar.isol`,
+`meem-ar.isol`) in the Alexandria TTF. Two layers of fixes are applied:
+
+1. **Font ofs_list patch** (`font_alexandria_28.c`, `font_alexandria_12.c`):
+   U+FEB9 and U+FEE1 are remapped to share the final-form glyphs (U+FEBA/U+FEE2)
+   which are identical for standalone display.
+
+2. **LVGL shaper patch** (`lv_text_ap.c:212`): When a character has no connections
+   in either direction (standalone), the original base form character is kept
+   instead of being converted to the missing isolated form.
+
+The `remap_arabic.py` script was also updated with `ISOL_FALLBACK` entries for
+future font regenerations (`0xFEB9: 0xFEBA`, `0xFEE1: 0xFEE2`).
+
+### Font Layout
+
+| Font | Size | BPP | Glyphs | Used for |
+|------|------|-----|--------|----------|
+| Reem Kufi 72 | 72px | 4bpp | 11 | Clock time (stacked HH\nMM) |
+| Reem Kufi 48 | 48px | 4bpp | 10 | Counter digits |
+| Alexandria 28 | 28px | 4bpp | 370 | Arabic phrases (أستغفر الله, etc.), timeedit numbers |
+| Alexandria 16 | 16px | 2bpp | 370 | Titles, day names, date, hints, theme default |
+| Alexandria 12 | 12px | 2bpp | 370 | Small labels, battery %, AM/PM on home clock |
+
+### Regenerating Fonts
+
+```bash
+# 1. Remap the TTF (one-time per font)
+python3 remap_arabic.py ReemKufi-Regular.ttf
+
+# 2. Generate LVGL C files
+lv_font_conv --no-compress --format lvgl \
+  --font /path/to/remapped.ttf \
+  --size 16 --bpp 2 \
+  --range 0x0020-0x007F,0x0600-0x06FF,0xFB50-0xFDFF,0xFE70-0xFEFF \
+  --symbols "$(printf '\u200c\u200d\u200b\u00a0')" \
+  -o font_alexandria_16.c
+
+# 3. Fix include path
+sed -i 's|#include "lvgl/lvgl.h"|#include <lvgl.h>|' font_alexandria_16.c
+```
+
+Key options:
+- `--range 0x0020-0x007F` — full ASCII (digits, Latin, punctuation)
+- `--range 0x0600-0x06FF` — Arabic base block
+- `--range 0xFB50-0xFDFF,0xFE70-0xFEFF` — Arabic Presentation Forms (contextual shapes)
+- `--symbols "\u200c\u200d\u200b\u00a0"` — zero-width control chars the shaper needs
 
 ---
 
-## Color System
+## Navigation Architecture
+
+### Ring (circular, swipe)
+
+```
+   ┌──────┐   swipe left    ┌───────────┐   swipe left    ┌──────────┐
+   │ HOME │ ──────────────→ │ ISTIGHFAR │ ──────────────→ │ TASBEEH  │
+   │      │ ←────────────── │           │ ←────────────── │          │
+   └──────┘   swipe right   └───────────┘   swipe right   └──────────┘
+```
+
+3 screens in a circular buffer. `navigate_ring(+1)` and `navigate_ring(-1)` wrap
+around with `% RING_LEN`. Swipe-left = next screen (MOVE_LEFT animation),
+swipe-right = previous (MOVE_RIGHT animation).
+
+### Modal (overlay, swipe-down/left to dismiss)
+
+```
+   ┌──────────┐                ┌──────────────┐
+   │ SETTINGS │ ← gear / ↓     │ TIMEEDIT     │ ← long-press clock
+   │ swipe ↓  │                │ < swipe ↓/←  │
+   │ tap bg   │                │ tap < or title│
+   └──────────┘                └──────────────┘
+```
+
+`push_modal(dest)` remembers the current screen, slides modal up.
+`pop_modal()` slides back down. Swipe-down, swipe-left, or back arrow dismiss.
+
+TimeEdit no longer has background-tap-to-dismiss — user must tap the back arrow `<`
+or title to cancel.
+
+### Safe event handling
+
+Every button callback checks `lv_screen_active()` before acting — prevents
+animation-race bugs where a tap during a 200ms transition lands on the wrong screen.
+
+---
+
+## Battery Monitoring
+
+- **Pin**: GPIO1 (ADC1_CH0) via 200K + 100K voltage divider (ratio 3:1)
+- **Method**: `analogReadMilliVolts()` — uses ESP32-S3 factory ADC calibration
+- **Formula**: V_bat = V_adc × 3.0, mapped 3.5V→0% to 4.15V→100%
+- **Update**: Every 5 seconds, displayed at top-left of home screen
+- **Color**: Red below 20%, grey otherwise
+
+---
+
+## Tasbeeh Phrase Persistence
+
+The tasbeeh counter remembers both the **count** and the **current phrase**
+(سبحان الله / الحمد لله / الله أكبر) across reboots via NVS:
+
+- `tasbeeh` key: count (uint32)
+- `tasbeeh_phrase` key: phrase index (int, 0–2)
+
+Saved when the phrase advances (at 33) and loaded on boot.
+
+---
+
+## Performance Optimizations
+
+| Optimization | What | Where |
+|---|---|---|
+| Double buffering | 2× 57KB buffers (partial mode) — renders into buf2 while buf1 flushes | `main.cpp` |
+| 80 MHz SPI | `-D SPI_FREQUENCY=80000000` in build flags | `platformio.ini` |
+| `-O2` optimization | Compiler optimizes for speed not size | `platformio.ini` |
+| Flush batching | SPI transaction stays open across dirty rectangles within a frame | `main.cpp` flush callback |
+| `delay(1)` in loop | Minimal idle between LVGL renders | `main.cpp` |
+| Circle cache 16 | Anti-alias cache for round display elements | `lv_conf.h` |
+| FPS counter off | `LV_USE_SYSMON=0`, `LV_USE_PERF_MONITOR=0` | `lv_conf.h` |
+
+Current: **RAM 60.4%** (198KB / 328KB), **Flash ~26%** (815KB / 3.1MB).
+
+---
+
+## Color Palette
 
 | Role | Hex | Used in |
 |------|-----|---------|
-| Background | `#0a0e1a` | All screens |
-| Card surface | `#111827` | Settings card, elevated containers |
-| Primary accent | `#00c8a0` (Teal) | Buttons, arcs, titles |
-| Secondary accent | `#fea020` (Gold) | Clock time |
-| Isteghfar accent | `#3b82f6` (Blue) | Isteghfar button + arc |
-| Success | `#00e000` (Green) | Milestone flash |
-| Danger | `#ff4040` (Red) | Low battery (< 20%) |
-| Text primary | `#f9fafb` | Labels, counter values |
-| Text secondary | `#6b7280` | Date, descriptions |
-| Border | `#1f2937` | Card borders |
+| Background | `#0b1410` | All screens — deep dark green-black |
+| Surface | `#0e2820` | Cards, elevated containers |
+| Gold | `#d4af37` | Home: day name, seconds arc, AM/PM, arrows |
+| Ivory | `#f6e6b3` | Clock digits, counter values, phrases |
+| Cream | `#e9d9a8` | Body text, date |
+| Cream dim | `#7a6e56` | Secondary text, hints |
+| Teal/Green | `#33cc55` | Istighfar: title, arc. Save button |
+| Blue | `#7fd6a3` | Tasbeeh: title, arc, active dot |
+| Red | `#ff4444` | Battery warning |
 
 ---
 
-## Fonts
-
-| Font | Size | Purpose |
-|------|------|---------|
-| Montserrat 14 | 14px | Secondary labels, date, battery % |
-| Montserrat 24 | 24px | Counter value inside arc |
-| Montserrat 42 | 42px | Clock time on home screen |
-| DejaVu 16 Persian/Hebrew | 16px | Arabic labels (buttons, titles, total) |
-
-Arabic labels used on‑device: تسبيح, استغفار, القائمة, الإجمالي, اضغط, تذكير, تم, تأجيل, الإعدادات, ضبط الوقت, حفظ.
-
----
-
-## Libraries & Dependencies
+## TimeEdit — 12-Hour with AM/PM
 
 ```
-lvgl/lvgl @ 9.2.0            # LVGL graphics library
-Bodmer/TFT_eSPI @ 2.5.43     # Display driver (GC9A01 over SPI)
-fbiego/CST816S @ 1.1.1       # Touch driver (CST816S over I2C)
-tzapu/WiFiManager @ 2.0.17   # Captive portal WiFi configuration
-bblanchon/ArduinoJson @ 6.21.3  # JSON serialization for web API
+       <  ضبط الوقت
+
+       [ HH ]  :  [ MM ]  [ص/م]
+       [ DD ]  /  [ MM ]  /  [ YYYY ]
+
+         ╔══╗  ╔══════╗  ╔══╗
+         ║− ║  ║ حفظ  ║  ║+ ║
+         ╚══╝  ╚══════╝  ╚══╝
 ```
 
-Platform: `espressif32`, Arduino framework 3.0.1
-Board: `waveshare_esp32s3_touch_lcd_128` (ESP32-S3, 16MB Flash, 2MB PSRAM)
+**Features:**
+- 12-hour format with AM/PM toggle (ص/م, field index 5, selectable via +/−)
+- 24h↔12h conversion on open/save
+- Active field highlighted teal with inverted text
+- Per-field validation (hour 1–12, minute 0–59, day 1–31, month 1–12, year 2024–2099)
+- Back arrow `<` + title tap dismisses without saving
+- Layout respects circular display chord limits
 
 ---
 
-## Features
+## LVGL Configuration
 
-### Device UI (6 screens)
-
-- **Home** — large clock (HH:MM), date, battery percentage, gear icon → settings, arrow icon → thiker
-- **Thiker** — two pill buttons: تسبيح and استغفار
-- **Tasbeeh counter** — `lv_arc` ring (0–99), counter value, running total, TAP button
-- **Isteghfar counter** — same layout with blue accent
-- **Settings** — device IP address display, back button
-- **Time Editor** — 5‑field stepper (hour, minute, day, month, year) with +/− buttons
-- **Reminder popup** — modal `lv_msgbox` with time, label, dismiss (تم) and snooze (تأجيل) buttons
-
-### Counter features
-
-- Tap to increment (saved to ESP32 Preferences/NVS)
-- Arc ring shows modulo‑99 progress
-- Green 400ms flash on setiap 99‑count milestone (non‑blocking)
-- Total label: الإجمالي: N — persisted across power cycles
-
-### Reminders
-
-- Up to 10 reminders configured via web browser
-- Each has: hour, minute, label text, enable/disable toggle
-- Fires a modal popup at the set time
-- Snooze option dismisses and suppresses re‑fire for that minute
-
-### WiFi & Time
-
-- WiFiManager captive portal (`TasbeehWatch` SSID, 192.168.4.1)
-- NTP time sync on connect (`pool.ntp.org`, UTC+3)
-- Time persisted to Preferences
-
-### Web Config Portal
-
-Accessible at `http://<device-ip>` after WiFi connect:
-
-- View current time, date, battery, counter values
-- Set time/date
-- Configure up to 10 reminders (hour, minute, label, enabled)
-- RTL Arabic interface
-
-### Performance
-
-- RAM: 36.0% used (118 KB / 320 KB free)
-- Flash: 46.3% used (1.45 MB / 3.1 MB free)
-- LVGL partial render mode (only changed regions sent to display)
-- LVGL FPS monitor (top‑right corner) during development
-- Battery ADC read runs on a 10‑second timer (decoupled from render path)
-- 15 unused LVGL widgets disabled at compile time
-
----
-
-## LVGL Configuration Highlights
-
-All settings are in `src/config/lv_conf.h`. Key changes from default:
+Key settings in `src/config/lv_conf.h`:
 
 ```c
-#define LV_OBJ_STYLE_CACHE      1    // Faster style lookups
-#define LV_THEME_DEFAULT_DARK    1    // Dark theme baseline
-#define LV_USE_BIDI             1    // Bidirectional text
-#define LV_USE_ARABIC_PERSIAN_CHARS 1    // Arabic letter shaping
-#define LV_FONT_DEJAVU_16_PERSIAN_HEBREW 1  // Arabic font
-#define LV_FONT_MONTSERRAT_24    1    // Counter value font
-#define LV_FONT_MONTSERRAT_42    1    // Clock font
-#define LV_USE_SYSMON           1    // System monitor
-#define LV_USE_PERF_MONITOR     1    // FPS display
-// Disabled: calendar, chart, keyboard, table, tabview,
-//           tileview, win, roller, spinbox, led, line,
-//           list, menu, scale (15 widgets)
+#define LV_COLOR_DEPTH 16
+#define LV_MEM_SIZE (64 * 1024)
+#define LV_DEF_REFR_PERIOD 33
+#define LV_USE_BIDI 1
+#define LV_BIDI_BASE_DIR_DEF LV_BASE_DIR_AUTO
+#define LV_USE_ARABIC_PERSIAN_CHARS 1
+#define LV_USE_TFT_ESPI 1
+#define LV_USE_THEME_DEFAULT 1
+#define LV_THEME_DEFAULT_DARK 1
+#define LV_FONT_MONTSERRAT_14 1    // Gear icon, swipe arrows
+#define LV_DRAW_SW_CIRCLE_CACHE_SIZE 16
+#define LV_USE_SYSMON 0            // FPS counter disabled
+#define LV_USE_PERF_MONITOR 0
 ```
+
+## Known Patches to LVGL Library
+
+**`lv_text_ap.c:212`** — Arabic shaper: when a character has no conjunction in either
+direction (standalone), keep the original base-form character instead of converting
+to the isolated presentation form. This fixes missing isolated-form glyphs (ص/م)
+in the Alexandria font. Path:
+
+```
+.pio/libdeps/waveshare_esp32s3_touch_lcd_128/lvgl/src/misc/lv_text_ap.c
+```
+
+**`font_alexandria_28.c`** / **`font_alexandria_12.c`** — `glyph_id_ofs_list_7`:
+Entries for U+FEB9 (index 57) and U+FEE1 (index 97) changed from `0` to match
+their final-form counterparts (`44` and `74`), pointing to glyph_ids 318 and 348.
 
 ---
 
@@ -321,11 +316,8 @@ All settings are in `src/config/lv_conf.h`. Key changes from default:
 ### Prerequisites
 
 1. Install [PlatformIO](https://platformio.org/) (`pip install platformio`)
-2. Install CH34x USB‑UART drivers:
-   - [macOS](https://www.wch.cn/downloads/CH34XSER_MAC_ZIP.html)
-   - [Windows](https://www.wch.cn/downloads/CH341SER_EXE.html)
-3. Connect the board via USB
-4. Enter download mode: **hold BOOT**, press **RESET**, release **BOOT**
+2. Connect the Waveshare board via USB
+3. Enter download mode: hold BOOT, press RESET, release BOOT
 
 ### Build
 
@@ -333,68 +325,33 @@ All settings are in `src/config/lv_conf.h`. Key changes from default:
 pio run
 ```
 
-### Upload
+### Upload & Monitor
 
 ```bash
-# Find your port:
-pio device list
-
-# Upload:
-pio run --target upload --upload-port /dev/cu.wchusbserialXXXX
-```
-
-### Monitor
-
-```bash
-pio device monitor --port /dev/cu.wchusbserialXXXX --baud 115200
+pio run --target upload --upload-port /dev/ttyUSB0
+pio device monitor --port /dev/ttyUSB0 --baud 115200
 ```
 
 ---
 
-## How to Extend
+## Libraries
 
-### Adding a new counter type
+| Library | Version | Purpose |
+|---------|---------|---------|
+| lvgl/lvgl | 9.2.0 | Graphics framework |
+| Bodmer/TFT_eSPI | 2.5.43 | Display driver (GC9A01, SPI) |
+| fbiego/CST816S | 1.1.1 | Touch driver (I2C) |
+| Preferences | — | Counter + time + phrase persistence (NVS) |
 
-1. Add a global `uint32_t` in `main.cpp` and load/save it from `Preferences`
-2. Call `create_counter_screen()` in `screens_init()` with new title, color, type
-3. Add a button to `scr_thiker` that navigates to the new screen
-4. Add `extern lv_obj_t*` to `screens.h` for external access
-
-### Changing the color palette
-
-Edit the `color_*` globals in `src/ui/styles.cpp`. All widgets reference these single-color definitions — changes propagate everywhere.
-
-### Adding Arabic labels
-
-Use UTF‑8 sequences. The DejaVu 16 font covers Arabic, Persian, and Hebrew scripts.
-Enable `LV_USE_BIDI`, `LV_BIDI_BASE_DIR_DEF`, and `LV_USE_ARABIC_PERSIAN_CHARS` in `lv_conf.h`.
-
-### Disabling the FPS counter (for production)
-
-Set `LV_USE_PERF_MONITOR 0` in `lv_conf.h`.
-
-### Tuning animation durations
-
-Screen transitions: change the `200` parameter in navigation functions in `screens.cpp`.
-Milestone flash: change the `400` parameter in `tap_counter_cb`.
+WiFi, WebServer, WiFiManager, and ArduinoJson were removed — the device is fully
+offline. All state persists via ESP32 Preferences (NVS flash storage).
 
 ---
 
 ## Hardware
 
-- **Board**: Waveshare ESP32‑S3‑Touch‑LCD‑1.28
-- **MCU**: ESP32‑S3 (dual‑core Xtensa LX7, 240 MHz)
-- **Flash**: 16 MB
-- **PSRAM**: 2 MB (Octal)
-- **Display**: 1.28" round TFT, 240×240, GC9A01 driver, SPI
-- **Touch**: CST816S capacitive touch, I2C
-- **Battery**: ADC pin 1, voltage divider (×2)
-- **USB**: CH343 UART bridge
-
----
-
-## License
-
-This project builds on open‑source libraries (LVGL, TFT_eSPI, CST816S, WiFiManager, ArduinoJson).
-The application code is provided as a sample/starting point. Check individual library licenses
-for redistribution requirements.
+- **Board**: Waveshare ESP32-S3-Touch-LCD-1.28
+- **MCU**: ESP32-S3 (240 MHz, 320KB SRAM, 16MB Flash, 2MB PSRAM)
+- **Display**: 1.28" round TFT, 240×240, GC9A01, SPI (80 MHz)
+- **Touch**: CST816S capacitive, I2C (pins 6/7)
+- **Battery**: ADC pin 1 (GPIO1), 200K+100K voltage divider (3:1 ratio), ETA6096 charger

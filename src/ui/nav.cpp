@@ -4,7 +4,7 @@
 // ── Ring state ───────────────────────────────────────────────
 //   [0] Home  ←→  [1] Istighfar  ←→  [2] Tasbeeh  ←→  [0]
 lv_obj_t *ring_screens[RING_LEN];
-static int current_ring_idx = 0;
+int current_ring_idx = 0;
 
 void navigate_to_ring(int idx) {
 #if NAV_DEBUG
@@ -42,6 +42,7 @@ void gesture_ring_cb(lv_event_t *e) {
 #endif
     if (dir == LV_DIR_LEFT)  navigate_ring(+1);
     if (dir == LV_DIR_RIGHT) navigate_ring(-1);
+    if (dir == LV_DIR_BOTTOM && current_ring_idx == 0) push_modal(scr_settings);
 }
 
 // ── Modal state ──────────────────────────────────────────────
@@ -80,6 +81,7 @@ void gesture_modal_cb(lv_event_t *e) {
         (dir == LV_DIR_BOTTOM)? "BOTTOM ": "");
 #endif
     if (dir == LV_DIR_BOTTOM) pop_modal();
+    if (dir == LV_DIR_LEFT)   pop_modal();
 }
 
 void modal_bg_tap_cb(lv_event_t *e) {

@@ -14,7 +14,9 @@ static void my_disp_flush_dma(lv_display_t *disp, const lv_area_t *area, uint8_t
     tft.startWrite();
     tft.setAddrWindow(area->x1, area->y1, w, h);
     tft.pushColors((uint16_t *)px_map, w * h, true);
-    tft.endWrite();
+    if (lv_display_flush_is_last(disp)) {
+        tft.endWrite();
+    }
     lv_display_flush_ready(disp);
 }
 #endif
@@ -26,6 +28,8 @@ static void my_disp_flush_dma(lv_display_t *disp, const lv_area_t *area, uint8_t
 #include "ui/styles.h"
 #include "ui/screens.h"
 #include "indev/lv_indev_private.h"
+
+LV_FONT_DECLARE(font_alexandria_16);
 
 #define BAT_ADC       1
 #define MAX_REMINDERS 10
@@ -53,10 +57,10 @@ static lv_timer_t *battery_timer_obj = NULL;
 
 static int getBatteryPercent() {
     long sum = 0;
-    for (int i = 0; i < 16; i++) { sum += analogRead(BAT_ADC); delay(1); }
-    float raw     = sum / 16.0f;
-    float voltage = (raw / 4095.0f) * 3.3f * 2.0f;
-    int pct = (int)((voltage - 3.0f) / (4.2f - 3.0f) * 100.0f);
+    for (int i = 0; i < 16; i++) { sum += analogReadMilliVolts(BAT_ADC); delay(1); }
+    float v_adc = sum / 16.0f / 1000.0f;
+    float v_bat = v_adc * 3.0f;
+    int pct = (int)((v_bat - 3.5f) / (4.15f - 3.5f) * 100.0f);
     return constrain(pct, 0, 100);
 }
 
@@ -188,10 +192,7 @@ static void clock_timer_cb(lv_timer_t *timer) {
 
 static void battery_timer_cb(lv_timer_t *timer) {
     int pct = getBatteryPercent();
-    char icon[4] = "";
-    if (pct <= 10) snprintf(icon, sizeof(icon), "!");
-    else if (pct <= 30) snprintf(icon, sizeof(icon), "");
-    lv_label_set_text_fmt(home_bat_label, "%s %d%%", icon, pct);
+    lv_label_set_text_fmt(home_bat_label, "%d%%", pct);
     if (pct <= 20)
         lv_obj_set_style_text_color(home_bat_label, color_red, 0);
     else
@@ -242,6 +243,7 @@ void setup() {
     Serial.println("[2] prefs.begin...");
     prefs.begin("watch", false);
     tasbeehCount   = prefs.getUInt("tasbeeh", 0);
+    tasbeeh_phrase_idx = prefs.getInt("tasbeeh_phrase", 0);
     istighfarCount = prefs.getUInt("isteghfar", 0);
     loadReminders();
     loadTime();
@@ -287,6 +289,7 @@ void setup() {
     lv_indev_set_type(indev, LV_INDEV_TYPE_POINTER);
     lv_indev_set_read_cb(indev, my_touchpad_read);
     indev->gesture_limit = 20;  // lower threshold for 240×240 screen (default 50)
+    lv_indev_set_long_press_time(indev, 1000);  // 1s hold to trigger long press
     Serial.println("[5] OK");
 
     // Quick sanity: render a test label BEFORE any complex init
@@ -302,7 +305,7 @@ void setup() {
 
     Serial.println("[7] theme init...");
     lv_theme_t *th = lv_theme_default_init(disp,
-        color_teal, color_gold, true, &lv_font_dejavu_16_persian_hebrew);
+        color_teal, color_gold, true, &font_alexandria_16);
     Serial.printf("[7] theme = %p\n", (void*)th);
     lv_display_set_theme(disp, th);
     Serial.println("[7] OK");
@@ -326,6 +329,7 @@ void setup() {
     Serial.println("[10] OK (should see home screen)");
 
     clock_timer_obj = lv_timer_create(clock_timer_cb, 1000, NULL);
+    battery_timer_obj = lv_timer_create(battery_timer_cb, 5000, NULL);
     update_tasbeeh_display();
     update_istighfar_display();
 

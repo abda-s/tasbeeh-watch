@@ -18,6 +18,7 @@ extern lv_color_t color_ivory;       // #f6e6b3
 extern lv_color_t color_cream;       // #e9d9a8
 extern lv_color_t color_cream_dim;   // muted cream
 extern lv_color_t color_teal;        // #7fd6a3
+extern lv_color_t color_blue;        // #3b82f6
 extern lv_color_t color_border;      // dim gold border
 extern lv_color_t color_red;         // battery warning
 extern lv_color_t color_white;       // pure white (aliases ivory for compat)

@@ -21,6 +21,11 @@
 #include <Preferences.h>
 #include <Arduino.h>
 
+LV_FONT_DECLARE(font_alexandria_16);
+LV_FONT_DECLARE(font_alexandria_28);
+LV_FONT_DECLARE(font_alexandria_12);
+LV_FONT_DECLARE(font_reem_kufi_48);
+
 #define ISTIGHFAR_TARGET 100
 
 extern Preferences prefs;
@@ -67,19 +72,19 @@ void create_screen_istighfar(void)
     lv_obj_remove_style(istighfar_arc, NULL, LV_PART_KNOB);
     lv_obj_clear_flag(istighfar_arc, LV_OBJ_FLAG_CLICKABLE);
 
-    lv_obj_set_style_arc_color(istighfar_arc, lv_color_hex(0x2a2410), LV_PART_MAIN);
+    lv_obj_set_style_arc_color(istighfar_arc, lv_color_hex(0x0a1f10), LV_PART_MAIN);
     lv_obj_set_style_arc_width(istighfar_arc, 4, LV_PART_MAIN);
     lv_obj_set_style_arc_opa(istighfar_arc, LV_OPA_COVER, LV_PART_MAIN);
     lv_obj_set_style_bg_opa(istighfar_arc, LV_OPA_TRANSP, LV_PART_MAIN);
 
-    lv_obj_set_style_arc_color(istighfar_arc, color_gold, LV_PART_INDICATOR);
+    lv_obj_set_style_arc_color(istighfar_arc, color_teal, LV_PART_INDICATOR);
     lv_obj_set_style_arc_width(istighfar_arc, 4, LV_PART_INDICATOR);
     lv_obj_set_style_arc_rounded(istighfar_arc, true, LV_PART_INDICATOR);
 
     // ── Title  "استغفار" ─────────────────────────────────────
     lv_obj_t *title = lv_label_create(scr_istighfar);
-    lv_obj_set_style_text_font(title, &lv_font_dejavu_16_persian_hebrew, 0);
-    lv_obj_set_style_text_color(title, color_gold, 0);
+    lv_obj_set_style_text_font(title, &font_alexandria_16, 0);
+    lv_obj_set_style_text_color(title, color_teal, 0);
     lv_obj_set_style_text_align(title, LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_text(title,
         "\330\247\330\263\330\252\330\272\331\201\330\247\330\261");
@@ -87,19 +92,19 @@ void create_screen_istighfar(void)
 
     // ── Arabic phrase  "أَستَغفِرُ الله" ──────────────────────
     lv_obj_t *phrase = lv_label_create(scr_istighfar);
-    lv_obj_set_style_text_font(phrase, &lv_font_dejavu_16_persian_hebrew, 0);
+    lv_obj_set_style_text_font(phrase, &font_alexandria_28, 0);
     lv_obj_set_style_text_color(phrase, color_ivory, 0);
     lv_obj_set_style_text_align(phrase, LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_long_mode(phrase, LV_LABEL_LONG_WRAP);
     lv_obj_set_width(phrase, 180);
     lv_label_set_text(phrase,
-        "\330\243\331\216\330\263\330\252\331\216\330\272\331\201\331\220\330\261\331\222 "
+        "\330\243\330\263\330\252\330\272\331\201\330\261 "
         "\330\247\331\204\331\204\331\207");
     lv_obj_align(phrase, LV_ALIGN_CENTER, 0, -30);
 
     // ── Counter digit ─────────────────────────────────────────
     istighfar_count_label = lv_label_create(scr_istighfar);
-    lv_obj_set_style_text_font(istighfar_count_label, &lv_font_montserrat_48, 0);
+    lv_obj_set_style_text_font(istighfar_count_label, &font_reem_kufi_48, 0);
     lv_obj_set_style_text_color(istighfar_count_label, color_ivory, 0);
     lv_obj_set_style_text_align(istighfar_count_label, LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_text(istighfar_count_label, "0");
@@ -107,7 +112,7 @@ void create_screen_istighfar(void)
 
     // ── Hint  "من 100 · اضغط للعد" ───────────────────────────
     lv_obj_t *hint = lv_label_create(scr_istighfar);
-    lv_obj_set_style_text_font(hint, &lv_font_dejavu_16_persian_hebrew, 0);
+    lv_obj_set_style_text_font(hint, &font_alexandria_12, 0);
     lv_obj_set_style_text_color(hint, color_cream_dim, 0);
     lv_obj_set_style_text_align(hint, LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_text(hint,
