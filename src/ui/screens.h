@@ -41,6 +41,7 @@ extern String wifi_local_ssid;
 extern lv_obj_t *istighfar_arc;
 extern lv_obj_t *istighfar_count_label;
 extern uint32_t  istighfarCount;
+extern uint32_t  totalIstighfar;
 
 // ── Tasbeeh screen widgets ────────────────────────────────────
 extern lv_obj_t *tasbeeh_arc;
@@ -50,6 +51,7 @@ extern lv_obj_t *tasbeeh_title_label;
 extern lv_obj_t *tasbeeh_of_label;
 extern lv_obj_t *tasbeeh_dots[3];
 extern uint32_t  tasbeehCount;
+extern uint32_t  totalTasbeeh;
 extern int       tasbeeh_phrase_idx;
 
 // ── Settings widgets ──────────────────────────────────────────

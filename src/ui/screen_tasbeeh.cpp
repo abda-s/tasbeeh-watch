@@ -49,6 +49,7 @@ static const char *phrases[TASBEEH_PHRASES] = {
 extern Preferences prefs;
 uint32_t tasbeehCount = 0;
 int      tasbeeh_phrase_idx = 0;
+uint32_t totalTasbeeh = 0;
 
 lv_obj_t *tasbeeh_arc          = NULL;
 lv_obj_t *tasbeeh_count_label  = NULL;
@@ -80,6 +81,8 @@ static void tasbeeh_tap_cb(lv_event_t *e)
     if (lv_screen_active() != scr_tasbeeh) return;
 
     tasbeehCount++;
+    totalTasbeeh++;
+    prefs.putUInt("totaltasbeeh", totalTasbeeh);
     if (tasbeehCount >= (uint32_t)TASBEEH_TARGET) {
         tasbeehCount = 0;
         tasbeeh_phrase_idx = (tasbeeh_phrase_idx + 1) % TASBEEH_PHRASES;

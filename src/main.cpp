@@ -418,6 +418,7 @@ void wifi_ap_save_credentials(String ssid, String pass) {
 
     wifi_state = WIFI_CONNECTING;
     wifi_connect_start = millis();
+    wifi_modal_shown = true;
     ap_timed_out = false;
 }
 
@@ -489,8 +490,8 @@ static void handle_wifi_connecting() {
         wifi_state = WIFI_IDLE;
         WiFi.disconnect();
 
-        // Initial boot: show choice modal (connect or stay offline)
-        if (!wifi_modal_shown && !prefs.getBool("wifi_offline", false)) {
+        // Show choice modal (connect or stay offline) on first failure
+        if (!wifi_modal_shown) {
             extern void wifi_setup_show_choice(void);
             push_modal(scr_wifi_setup);
             wifi_setup_show_choice();
@@ -530,7 +531,7 @@ static void wifi_timer_cb(lv_timer_t *timer) {
 
 #define TFT_HOR_RES   240
 #define TFT_VER_RES   240
-#define TFT_ROTATION  LV_DISPLAY_ROTATION_0
+#define TFT_ROTATION  LV_DISPLAY_ROTATION_270
 #define DRAW_BUF_SIZE (TFT_HOR_RES * TFT_VER_RES / 2 * (LV_COLOR_DEPTH / 8))
 uint32_t draw_buf_1[DRAW_BUF_SIZE / 4];
 uint32_t draw_buf_2[DRAW_BUF_SIZE / 4];
@@ -548,8 +549,8 @@ void my_touchpad_read(lv_indev_t *indev, lv_indev_data_t *data) {
         data->state = LV_INDEV_STATE_RELEASED;
     } else {
         data->state = LV_INDEV_STATE_PRESSED;
-        data->point.x = touch.data.x;
-        data->point.y = touch.data.y;
+        data->point.x = 240 - touch.data.x;
+        data->point.y = 240 - touch.data.y;
     }
 }
 
@@ -574,6 +575,8 @@ void setup() {
     tasbeehCount      = prefs.getUInt("tasbeeh", 0);
     tasbeeh_phrase_idx = prefs.getInt("tasbeeh_phrase", 0);
     istighfarCount    = prefs.getUInt("isteghfar", 0);
+    totalTasbeeh      = prefs.getUInt("totaltasbeeh", 0);
+    totalIstighfar    = prefs.getUInt("totalisteghfar", 0);
     loadReminders();
     loadTime();
     prefs.putInt("popup_idx", -1);  // clear any stale popup from previous crash
@@ -660,16 +663,9 @@ void setup() {
 
     Serial.println("=== SETUP DONE ===\n");
 
-    // Attempt WiFi connection (async, non-blocking)
-    bool offline = prefs.getBool("wifi_offline", false);
-    Serial.printf("[WiFi] wifi_offline flag = %s\n", offline ? "TRUE → skipping WiFi" : "FALSE → attempting connect");
-    if (!offline) {
-        attempt_wifi_connect();
-    } else {
-        wifi_state = WIFI_OFFLINE;
-        wifi_ready = false;
-        update_wifi_status_display();
-    }
+    // Always attempt WiFi connection (async, non-blocking)
+    // If it fails, the timeout handler will show the choice modal
+    attempt_wifi_connect();
 }
 
 void loop() {

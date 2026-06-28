@@ -30,6 +30,7 @@ LV_FONT_DECLARE(font_reem_kufi_48);
 
 extern Preferences prefs;
 uint32_t istighfarCount = 0;
+uint32_t totalIstighfar = 0;
 
 lv_obj_t *istighfar_arc         = NULL;
 lv_obj_t *istighfar_count_label = NULL;
@@ -46,6 +47,8 @@ static void istighfar_tap_cb(lv_event_t *e)
     if (lv_screen_active() != scr_istighfar) return;
 
     istighfarCount++;
+    totalIstighfar++;
+    prefs.putUInt("totalisteghfar", totalIstighfar);
     if (istighfarCount > ISTIGHFAR_TARGET) istighfarCount = 0;
 
     update_istighfar_display();

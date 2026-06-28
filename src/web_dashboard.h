@@ -9,6 +9,8 @@ extern Preferences prefs;
 extern int hour_, minute_, day_, month_, year_;
 extern uint32_t tasbeehCount;
 extern uint32_t istighfarCount;
+extern uint32_t totalTasbeeh;
+extern uint32_t totalIstighfar;
 extern int tasbeeh_phrase_idx;
 
 #define MAX_REMINDERS 10
@@ -129,6 +131,16 @@ input::placeholder{color:#4a5568;}
         <div class="sl">استغفار</div>
       </div>
     </div>
+    <div class="stats" style="margin-top:2px;border-top:1px solid var(--border);padding-top:8px;">
+      <div class="stat">
+        <div class="sv" id="ttv" style="font-size:1.2rem;">0</div>
+        <div class="sl">إجمالي التسبيح</div>
+      </div>
+      <div class="stat">
+        <div class="sv" id="tiv" style="font-size:1.2rem;">0</div>
+        <div class="sl">إجمالي الاستغفار</div>
+      </div>
+    </div>
   </div>
 
   <!-- Time set card -->
@@ -245,6 +257,8 @@ async function load(){
     document.getElementById('bat').innerText=(d.battery||0)+' %';
     document.getElementById('tv').innerText=d.tasbeeh||0;
     document.getElementById('iv').innerText=d.isteghfar||0;
+    document.getElementById('ttv').innerText=d.totaltasbeeh||0;
+    document.getElementById('tiv').innerText=d.totalisteghf||0;
     buildRemList(d.reminders||[]);
   }catch(e){
     console.error('load error',e);
@@ -307,6 +321,7 @@ setInterval(function(){
 },1000);
 
 load();
+setInterval(load, 3000);
 </script>
 </body></html>
 )rawhtml";
@@ -487,8 +502,10 @@ static void handle_api_state(WebServer &srv) {
     doc["hour"]   = hour_;    doc["minute"] = minute_;
     doc["day"]    = day_;     doc["month"]  = month_;
     doc["year"]   = year_;    doc["second"] = 0;
-    doc["tasbeeh"]    = tasbeehCount;
-    doc["isteghfar"]  = istighfarCount;
+    doc["tasbeeh"]      = tasbeehCount;
+    doc["isteghfar"]    = istighfarCount;
+    doc["totaltasbeeh"] = totalTasbeeh;
+    doc["totalisteghf"] = totalIstighfar;
     doc["battery"]    = getBatteryPercentWeb();
     JsonArray arr = doc.createNestedArray("reminders");
     for (int i = 0; i < MAX_REMINDERS; i++) {
