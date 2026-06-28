@@ -166,9 +166,9 @@ input::placeholder{color:#4a5568;}
       <div class="col-time">
         <label>الوقت</label>
         <div class="time-picker">
-          <select id="mt-h" aria-label="ساعة"></select>
-          <span class="time-sep">:</span>
           <select id="mt-m" aria-label="دقيقة"></select>
+          <span class="time-sep">:</span>
+          <select id="mt-h" aria-label="ساعة"></select>
         </div>
       </div>
       <div class="col">
@@ -228,9 +228,9 @@ function buildRemRow(i,r){
     '<div class="row">'+
       '<div class="col-time"><label>الوقت</label>'+
         '<div class="time-picker">'+
-          '<select id="rh'+i+'" aria-label="ساعة">'+hOpts+'</select>'+
-          '<span class="time-sep">:</span>'+
           '<select id="rm'+i+'" aria-label="دقيقة">'+mOpts+'</select>'+
+          '<span class="time-sep">:</span>'+
+          '<select id="rh'+i+'" aria-label="ساعة">'+hOpts+'</select>'+
         '</div>'+
       '</div>'+
       '<div class="col"><label>النص</label>'+

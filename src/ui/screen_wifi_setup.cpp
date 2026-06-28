@@ -6,6 +6,7 @@
 
 LV_FONT_DECLARE(font_alexandria_16);
 LV_FONT_DECLARE(font_alexandria_12);
+LV_FONT_DECLARE(font_dejavu_sans_16);
 
 extern bool wifi_ready;
 extern String wifi_local_ip;
@@ -127,7 +128,7 @@ void create_screen_wifi_setup(void) {
     lv_obj_set_layout(choice_cont, LV_LAYOUT_FLEX);
     lv_obj_set_flex_flow(choice_cont, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(choice_cont, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_set_style_pad_row(choice_cont, 18, 0);
+    lv_obj_set_style_pad_row(choice_cont, 10, 0);
 
     lv_obj_t *q1 = lv_label_create(choice_cont);
     lv_obj_set_style_text_font(q1, &font_alexandria_16, 0);
@@ -135,7 +136,7 @@ void create_screen_wifi_setup(void) {
     lv_label_set_text(q1, "\331\207\331\204 \330\252\330\261\331\212\330\257 \330\247\331\204\330\247\330\252\330\265\330\247\331\204");
 
     lv_obj_t *q2 = lv_label_create(choice_cont);
-    lv_obj_set_style_text_font(q2, &font_alexandria_12, 0);
+    lv_obj_set_style_text_font(q2, &font_dejavu_sans_16, 0);
     lv_obj_set_style_text_color(q2, color_cream_dim, 0);
     lv_label_set_text(q2, "\330\250\330\264\330\250\331\203\330\251 \331\210\330\247\331\212 \331\201\330\247\331\212\330\237");
 
@@ -143,7 +144,7 @@ void create_screen_wifi_setup(void) {
     lv_obj_set_size(connect_btn, 170, 42);
     lv_obj_add_style(connect_btn, &style_btn_pill_teal, 0);
     lv_obj_t *connect_lbl = lv_label_create(connect_btn);
-    lv_obj_set_style_text_font(connect_lbl, &font_alexandria_16, 0);
+    lv_obj_set_style_text_font(connect_lbl, &font_dejavu_sans_16, 0);
     lv_label_set_text(connect_lbl, "\330\247\330\252\330\265\331\204 \330\250\330\247\331\204\330\264\330\250\331\203\330\251");
     lv_obj_center(connect_lbl);
     lv_obj_add_event_cb(connect_btn, choice_connect_cb, LV_EVENT_CLICKED, NULL);
@@ -152,10 +153,9 @@ void create_screen_wifi_setup(void) {
     lv_obj_set_size(decline_btn, 170, 38);
     lv_obj_add_style(decline_btn, &style_card, 0);
     lv_obj_t *decline_lbl = lv_label_create(decline_btn);
-    lv_obj_set_style_text_font(decline_lbl, &font_alexandria_16, 0);
+    lv_obj_set_style_text_font(decline_lbl, &font_dejavu_sans_16, 0);
     lv_obj_set_style_text_color(decline_lbl, color_cream_dim, 0);
     lv_label_set_text(decline_lbl, "\330\247\331\204\330\247\330\263\330\252\331\205\330\261\330\247\330\261 \330\250\330\257\331\210\331\206 \330\247\330\252\330\265\330\247\331\204");
-    lv_obj_center(decline_lbl);
     lv_obj_add_event_cb(decline_btn, choice_decline_cb, LV_EVENT_CLICKED, NULL);
 
     // ═══ AP SETUP VIEW ════════════════════════════════════
@@ -167,7 +167,7 @@ void create_screen_wifi_setup(void) {
     lv_obj_set_layout(ap_cont, LV_LAYOUT_FLEX);
     lv_obj_set_flex_flow(ap_cont, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(ap_cont, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_set_style_pad_row(ap_cont, 10, 0);
+    lv_obj_set_style_pad_row(ap_cont, 6, 0);
     lv_obj_set_style_pad_bottom(ap_cont, 30, 0);
     lv_obj_add_flag(ap_cont, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_clear_flag(ap_cont, LV_OBJ_FLAG_SCROLL_CHAIN);

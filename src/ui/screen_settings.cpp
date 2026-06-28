@@ -3,7 +3,7 @@
 #include <Arduino.h>
 
 // Set to 0 to hide the debug "Erase WiFi" button for production
-#define DEBUG_ERASE_WIFI 0
+#define DEBUG_ERASE_WIFI 1
 
 LV_FONT_DECLARE(font_alexandria_16);
 LV_FONT_DECLARE(font_alexandria_12);

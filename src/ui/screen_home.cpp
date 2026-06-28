@@ -97,7 +97,7 @@ void update_home_clock(void)
 
     if (month_ >= 1 && month_ <= 12) {
         lv_label_set_text_fmt(home_date_label, "%d %s %d",
-            day_, MONTHS_AR[month_ - 1], year_);
+             year_, MONTHS_AR[month_ - 1], day_);
     }
 }
 
@@ -161,7 +161,7 @@ void create_screen_home(void)
     lv_obj_set_style_text_font(home_date_label, &font_alexandria_12, 0);
     lv_obj_set_style_text_color(home_date_label, color_cream, 0);
     lv_obj_set_style_text_align(home_date_label, LV_TEXT_ALIGN_CENTER, 0);
-    lv_label_set_text(home_date_label, "1 \331\212\331\206\330\247\331\212\330\261 2026");
+    lv_label_set_text(home_date_label, " 2026 \331\212\331\206\330\247\331\212\330\261 1 ");
     lv_obj_align(home_date_label, LV_ALIGN_CENTER, 0, 76);
 
     // ── Battery ──────────────────────────────────────────
