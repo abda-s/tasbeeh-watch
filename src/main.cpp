@@ -76,7 +76,7 @@ String scan_ssids[30];
 int    scan_rssi[30];
 int    scan_count = 0;
 
-WebServer server(80);
+ServerHelper server(80);
 DNSServer  dnsServer;
 
 static int getBatteryPercent() {
@@ -288,8 +288,9 @@ static void sync_ntp() {
 
 static void start_dashboard_server() {
     if (server_running) return;
-    server.stop();  // ensure clean state, kill any captive portal routes
-    setup_dashboard_server(server);
+    server.clearAllHandlers();
+    server.stop();
+    setup_dashboard_server(&server);
     server_running = true;
 }
 
@@ -361,7 +362,9 @@ void wifi_setup_start_ap() {
     WiFi.softAP("TasbeehWatch");
 
     dnsServer.start(53, "*", WiFi.softAPIP());
-    setup_wifi_portal(server);
+    server.clearAllHandlers();
+    server.stop();
+    setup_wifi_portal(&server);
 
     wifi_state = WIFI_AP_MODE;
     ap_start_time = millis();
@@ -625,29 +628,19 @@ void setup() {
     lv_indev_set_long_press_time(indev, 1000);
     Serial.println("[5] OK");
 
-    Serial.println("[6] test label...");
-    lv_obj_t *test = lv_label_create(lv_screen_active());
-    lv_label_set_text(test, "TEST OK");
-    lv_obj_set_style_text_color(test, lv_color_hex(0x00FF00), 0);
-    lv_obj_center(test);
-    lv_timer_handler();
-    delay(500);
-    Serial.println("[6] OK");
-    delay(1500);
-
-    Serial.println("[7] theme init...");
+    Serial.println("[6] theme init...");
     lv_theme_t *th = lv_theme_default_init(disp,
         color_teal, color_gold, true, &font_alexandria_16);
     lv_display_set_theme(disp, th);
+    Serial.println("[6] OK");
+
+    Serial.println("[7] ui_styles_init...");
+    ui_styles_init();
     Serial.println("[7] OK");
 
-    Serial.println("[8] ui_styles_init...");
-    ui_styles_init();
-    Serial.println("[8] OK");
-
-    Serial.println("[9] screens_init...");
+    Serial.println("[8] screens_init...");
     screens_init();
-    Serial.println("[9] OK");
+    Serial.println("[8] OK");
 
     update_home_clock();
     lv_screen_load(scr_home);

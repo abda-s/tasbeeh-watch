@@ -5,6 +5,22 @@
 #include <Preferences.h>
 #include <WiFi.h>
 
+// WebServer::stop() only closes the socket — handlers persist.
+// This helper exposes a method to clear the handler linked list.
+struct ServerHelper : public WebServer {
+    using WebServer::WebServer;
+    void clearAllHandlers() {
+        RequestHandler *h = _firstHandler;
+        while (h) {
+            RequestHandler *next = h->next();
+            delete h;
+            h = next;
+        }
+        _firstHandler = nullptr;
+        _lastHandler = nullptr;
+    }
+};
+
 extern Preferences prefs;
 extern int hour_, minute_, day_, month_, year_;
 extern uint32_t tasbeehCount;
@@ -497,7 +513,7 @@ loadNets();
 )rawhtml";
 
 // ── API: Dashboard state ──────────────────────────────────────
-static void handle_api_state(WebServer &srv) {
+static void handle_api_state(WebServer *srv) {
     StaticJsonDocument<2048> doc;
     doc["hour"]   = hour_;    doc["minute"] = minute_;
     doc["day"]    = day_;     doc["month"]  = month_;
@@ -516,14 +532,14 @@ static void handle_api_state(WebServer &srv) {
         o["enabled"] = reminders[i].enabled;
     }
     String out; serializeJson(doc, out);
-    srv.send(200, "application/json", out);
+    srv->send(200, "application/json", out);
 }
 
 // ── API: Set time ─────────────────────────────────────────────
-static void handle_api_time(WebServer &srv) {
-    if (srv.hasArg("plain")) {
+static void handle_api_time(WebServer *srv) {
+    if (srv->hasArg("plain")) {
         StaticJsonDocument<256> doc;
-        DeserializationError err = deserializeJson(doc, srv.arg("plain"));
+        DeserializationError err = deserializeJson(doc, srv->arg("plain"));
         if (!err) {
             hour_   = doc["hour"]   | hour_;
             minute_ = doc["minute"] | minute_;
@@ -534,14 +550,14 @@ static void handle_api_time(WebServer &srv) {
             saveTime();
         }
     }
-    srv.send(200, "application/json", "{\"ok\":true}");
+    srv->send(200, "application/json", "{\"ok\":true}");
 }
 
 // ── API: Set reminders ────────────────────────────────────────
-static void handle_api_reminders(WebServer &srv) {
-    if (srv.hasArg("plain")) {
+static void handle_api_reminders(WebServer *srv) {
+    if (srv->hasArg("plain")) {
         StaticJsonDocument<4096> doc;
-        DeserializationError err = deserializeJson(doc, srv.arg("plain"));
+        DeserializationError err = deserializeJson(doc, srv->arg("plain"));
         if (!err) {
             JsonArray arr = doc["reminders"].as<JsonArray>();
             for (int i = 0; i < MAX_REMINDERS && i < (int)arr.size(); i++) {
@@ -560,32 +576,32 @@ static void handle_api_reminders(WebServer &srv) {
             saveReminders();
         }
     }
-    srv.send(200, "application/json", "{\"ok\":true}");
+    srv->send(200, "application/json", "{\"ok\":true}");
 }
 
 // ── Setup dashboard server ────────────────────────────────────
-static void setup_dashboard_server(WebServer &srv) {
-    srv.on("/", HTTP_GET, [&srv]() {
-        srv.send(200, "text/html", DASHBOARD_HTML);
+static void setup_dashboard_server(WebServer *srv) {
+    srv->on("/", HTTP_GET, [srv]() {
+        srv->send(200, "text/html", DASHBOARD_HTML);
     });
-    srv.on("/api/state", HTTP_GET, [&srv]() {
+    srv->on("/api/state", HTTP_GET, [srv]() {
         handle_api_state(srv);
     });
-    srv.on("/api/time", HTTP_POST, [&srv]() {
+    srv->on("/api/time", HTTP_POST, [srv]() {
         handle_api_time(srv);
     });
-    srv.on("/api/reminders", HTTP_POST, [&srv]() {
+    srv->on("/api/reminders", HTTP_POST, [srv]() {
         handle_api_reminders(srv);
     });
-    srv.begin();
+    srv->begin();
 }
 
 // ── Setup WiFi captive portal ─────────────────────────────────
-static void setup_wifi_portal(WebServer &srv) {
-    srv.on("/", HTTP_GET, [&srv]() {
-        srv.send(200, "text/html", WIFI_CONFIG_HTML);
+static void setup_wifi_portal(WebServer *srv) {
+    srv->on("/", HTTP_GET, [srv]() {
+        srv->send(200, "text/html", WIFI_CONFIG_HTML);
     });
-    srv.on("/api/scan", HTTP_GET, [&srv]() {
+    srv->on("/api/scan", HTTP_GET, [srv]() {
         extern int scan_count;
         extern String scan_ssids[];
         extern int scan_rssi[];
@@ -598,12 +614,12 @@ static void setup_wifi_portal(WebServer &srv) {
             o["open"]  = (WiFi.encryptionType(i) == WIFI_AUTH_OPEN);
         }
         String out; serializeJson(doc, out);
-        srv.send(200, "application/json", out);
+        srv->send(200, "application/json", out);
     });
-    srv.on("/api/wifi-save", HTTP_POST, [&srv]() {
-        if (srv.hasArg("plain")) {
+    srv->on("/api/wifi-save", HTTP_POST, [srv]() {
+        if (srv->hasArg("plain")) {
             StaticJsonDocument<256> doc;
-            DeserializationError err = deserializeJson(doc, srv.arg("plain"));
+            DeserializationError err = deserializeJson(doc, srv->arg("plain"));
             if (!err) {
                 String ssid = doc["ssid"].as<String>();
                 String pass = doc["password"].as<String>();
@@ -611,7 +627,7 @@ static void setup_wifi_portal(WebServer &srv) {
                 wifi_ap_save_credentials(ssid, pass);
             }
         }
-        srv.send(200, "application/json", "{\"ok\":true}");
+        srv->send(200, "application/json", "{\"ok\":true}");
     });
-    srv.begin();
+    srv->begin();
 }
