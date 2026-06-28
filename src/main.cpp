@@ -72,6 +72,11 @@ static unsigned long ap_start_time = 0;
 static bool ap_timed_out = false;
 static bool wifi_modal_shown = false;
 static bool server_running = false;
+
+// ── Display sleep ───────────────────────────────────────────
+static lv_display_t *lv_disp = NULL;
+static bool display_sleeping = false;
+#define SLEEP_TIMEOUT_MS 30000
 String scan_ssids[30];
 int    scan_rssi[30];
 int    scan_count = 0;
@@ -529,6 +534,32 @@ static void wifi_timer_cb(lv_timer_t *timer) {
 }
 
 // ══════════════════════════════════════════════════════════════
+//  Display sleep / wake
+// ══════════════════════════════════════════════════════════════
+
+static void sleep_display() {
+    digitalWrite(TFT_BL, !TFT_BACKLIGHT_ON);
+    tft.writecommand(0x10);                     // TFT_SLPIN
+    display_sleeping = true;
+}
+
+static void wake_display() {
+    tft.writecommand(0x11);                     // TFT_SLPOUT
+    delay(120);                                  // oscillator stabilize
+    tft.writecommand(0x29);                     // TFT_DISPON
+    digitalWrite(TFT_BL, TFT_BACKLIGHT_ON);
+    lv_display_trigger_activity(lv_disp);
+    display_sleeping = false;
+}
+
+static void screen_sleep_cb(lv_timer_t *t) {
+    if (!display_sleeping && lv_disp
+        && lv_display_get_inactive_time(lv_disp) > SLEEP_TIMEOUT_MS) {
+        sleep_display();
+    }
+}
+
+// ══════════════════════════════════════════════════════════════
 //  Display
 // ══════════════════════════════════════════════════════════════
 
@@ -549,6 +580,9 @@ void my_print(lv_log_level_t level, const char *buf) {
 
 void my_touchpad_read(lv_indev_t *indev, lv_indev_data_t *data) {
     if (!touch.available()) {
+        data->state = LV_INDEV_STATE_RELEASED;
+    } else if (display_sleeping) {
+        wake_display();
         data->state = LV_INDEV_STATE_RELEASED;
     } else {
         data->state = LV_INDEV_STATE_PRESSED;
@@ -618,6 +652,7 @@ void setup() {
         Serial.println("[4] FATAL: display creation failed!");
         while(1) { delay(1000); }
     }
+    lv_disp = disp;
     Serial.println("[4] OK");
 
     Serial.println("[5] touch input...");
@@ -649,7 +684,8 @@ void setup() {
 
     clock_timer_obj  = lv_timer_create(clock_timer_cb, 1000, NULL);
     battery_timer_obj = lv_timer_create(battery_timer_cb, 5000, NULL);
-    wifi_timer_obj    = lv_timer_create(wifi_timer_cb, 500, NULL);
+    wifi_timer_obj    = lv_timer_create(wifi_timer_cb,   500, NULL);
+    lv_timer_create(screen_sleep_cb, 1000, NULL);
 
     update_tasbeeh_display();
     update_istighfar_display();
