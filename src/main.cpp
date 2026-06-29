@@ -70,8 +70,9 @@ static bool had_credentials = false;    // set when creds found/saved, avoids NV
 static unsigned long last_conn_check    = 0;
 static unsigned long last_bg_retry      = 0;
 static unsigned long wifi_connected_at  = 0;
+static int conn_fail_count = 0;
 #define CONN_LOST_CHECK_MS   2000
-#define CONN_STABLE_GRACE_MS 5000
+#define CONN_STABLE_GRACE_MS 8000
 #define BG_RETRY_INTERVAL_MS 30000
 
 // ── Two-phase AP startup ─────────────────────────────────────
@@ -297,24 +298,36 @@ static bool ntp_pending = false;
 static int  ntp_tries   = 0;
 
 static void sync_ntp_start() {
-    configTime(3 * 3600, 0, "pool.ntp.org");
+    configTime(3 * 3600, 0, "pool.ntp.org", "time.google.com", "time.cloudflare.com");
     ntp_pending = true;
     ntp_tries   = 0;
+    Serial.println("[NTP] Started");
 }
 
 static void sync_ntp_poll() {
     if (!ntp_pending) return;
+
+    static unsigned long last_ntp_check = 0;
+    if (millis() - last_ntp_check < 1000) return;
+    last_ntp_check = millis();
+
     struct tm t;
-    if (getLocalTime(&t)) {
+    if (getLocalTime(&t, 0)) {
         hour_   = t.tm_hour; minute_ = t.tm_min; second_ = t.tm_sec;
-        day_    = t.tm_mday; month_   = t.tm_mon + 1; year_ = t.tm_year + 1900;
+        day_    = t.tm_mday; month_  = t.tm_mon + 1; year_ = t.tm_year + 1900;
         saveTime();
         update_home_clock();
         ntp_pending = false;
+        ntp_tries   = 0;
         Serial.println("[NTP] Time synced");
-    } else if (++ntp_tries >= 20) {
-        ntp_pending = false;
-        Serial.println("[NTP] Sync failed (timeout)");
+    } else {
+        ntp_tries++;
+        if (ntp_tries % 5 == 0) Serial.printf("[NTP] Waiting... try %d\n", ntp_tries);
+        if (ntp_tries >= 15) {
+            Serial.println("[NTP] Restarting configTime...");
+            configTime(3 * 3600, 0, "pool.ntp.org", "time.google.com", "time.cloudflare.com");
+            ntp_tries = 0;
+        }
     }
 }
 
@@ -334,16 +347,17 @@ static void stop_dashboard_server() {
 }
 
 static bool has_saved_wifi_credentials() {
-    // WiFi.psk() reads NVS via esp_wifi_get_config — needs WiFi initialized
+    Serial.printf("[WiFi] Checking creds (mode before=%d)\n", (int)WiFi.getMode());
     WiFi.mode(WIFI_STA);
     wifi_config_t conf;
     esp_err_t err = esp_wifi_get_config(WIFI_IF_STA, &conf);
     String ssid = (err == ESP_OK) ? String((const char*)conf.sta.ssid) : String();
-    WiFi.mode(WIFI_OFF);
+    // Don't switch OFF — tearing down netstack here causes
+    // "netstack cb reg failed" + freezes on re-init.
 
     bool has = (ssid.length() > 0);
-    Serial.printf("[WiFi] Stored SSID: \"%s\" -> %s\n",
-        ssid.c_str(), has ? "will attempt" : "none saved");
+    Serial.printf("[WiFi] Stored SSID: \"%s\"  has=%d  err=%d\n",
+        ssid.c_str(), has, (int)err);
     return has;
 }
 
@@ -360,6 +374,11 @@ static void attempt_wifi_connect() {
         return;
     }
 
+    // Let netstack settle after mode change — avoids "netstack cb reg failed"
+    Serial.println("[WiFi] Settling netstack...");
+    delay(200);
+    Serial.println("[WiFi] Netstack settled, starting connect");
+
     wifi_state         = WIFI_CONNECTING;
     wifi_connect_start = millis();
     wifi_modal_shown   = false;
@@ -369,6 +388,10 @@ static void attempt_wifi_connect() {
     WiFi.mode(WIFI_STA);
     WiFi.setAutoReconnect(true);
     WiFi.begin();                       // use saved NVS credentials
+
+    // Start NTP query immediately — doesn't need WL_CONNECTED, works once
+    // the lower netif has an IP (saves ~8s vs waiting for connect callback)
+    sync_ntp_start();
     Serial.println("[WiFi] WiFi.begin() called with saved credentials");
 }
 
@@ -530,6 +553,8 @@ static void handle_wifi_connecting() {
         wifi_local_ssid = WiFi.SSID();
         wifi_state      = WIFI_CONNECTED;
         wifi_connected_at = millis();
+        last_conn_check   = millis();
+        conn_fail_count   = 0;
         prefs.putBool("wifi_offline", false);
         wifi_bg_retry   = false;
 
@@ -537,8 +562,9 @@ static void handle_wifi_connecting() {
             wifi_local_ssid.c_str(),
             wifi_local_ip.c_str(),
             millis() - wifi_connect_start);
+        Serial.printf("[WiFi] Guards reset: grace=%lu  fail_count=%d\n",
+            millis() - wifi_connected_at, conn_fail_count);
 
-        sync_ntp_start();
         start_dashboard_server();
         update_wifi_status_display();
 
@@ -587,16 +613,39 @@ static void handle_wifi_connecting() {
 // ── Background connection monitoring ──────────────────────────
 
 // Detect silent disconnect while we thought we were connected
+// Uses double-fault: requires 2 consecutive bad reads to confirm loss
 static void check_connection_lost() {
-    if (wifi_state != WIFI_CONNECTED) return;
-    if (millis() - wifi_connected_at < CONN_STABLE_GRACE_MS) return;
+    if (wifi_state != WIFI_CONNECTED) { conn_fail_count = 0; return; }
+
+    unsigned long grace_remaining = CONN_STABLE_GRACE_MS - (millis() - wifi_connected_at);
+    if (grace_remaining > CONN_STABLE_GRACE_MS) grace_remaining = 0;
+    if (grace_remaining > 0) {
+        static unsigned long last_grace_log = 0;
+        if (millis() - last_grace_log > 3000) {
+            last_grace_log = millis();
+            Serial.printf("[WiFi] Grace: %lu ms remaining\n", grace_remaining);
+        }
+        return;
+    }
+
     if (millis() - last_conn_check < CONN_LOST_CHECK_MS) return;
     last_conn_check = millis();
 
     wl_status_t s = WiFi.status();
-    if (s == WL_CONNECTED) return;
+    if (s == WL_CONNECTED) {
+        if (conn_fail_count > 0) {
+            Serial.printf("[WiFi] Disconnect glitch cleared (had %d failures)\n", conn_fail_count);
+            conn_fail_count = 0;
+        }
+        return;
+    }
 
-    Serial.printf("[WiFi] Connection lost (status=%d) — was CONNECTED\n", (int)s);
+    conn_fail_count++;
+    Serial.printf("[WiFi] Status=%d  fail_count=%d/2\n", (int)s, conn_fail_count);
+    if (conn_fail_count < 2) return;
+    conn_fail_count = 0;
+
+    Serial.printf("[WiFi] Connection lost confirmed (status=%d) — disconnecting\n", (int)s);
     wifi_ready      = false;
     wifi_local_ip   = "";
     wifi_local_ssid = "";
@@ -613,9 +662,13 @@ static void background_retry_connect() {
     last_bg_retry = millis();
 
     // Only attempt if we have saved credentials (try begin — safe, returns immediately)
-    if (!had_credentials) return;   // never had saved creds, nothing to retry
+    if (!had_credentials) {
+        Serial.println("[WiFi] bg retry skipped — no credentials");
+        return;
+    }
 
-    Serial.println("[WiFi] Background retry — attempting reconnect");
+    Serial.printf("[WiFi] Background retry — state=%d mode=%d\n",
+        (int)wifi_state, (int)WiFi.getMode());
     wifi_state         = WIFI_CONNECTING;
     wifi_connect_start = millis();
     wifi_bg_retry      = true;
@@ -639,6 +692,13 @@ static void poll_ap_start_sequence() {
 }
 
 static void wifi_timer_cb(lv_timer_t *timer) {
+    static unsigned long last_state_log = 0;
+    if (millis() - last_state_log > 10000) {
+        last_state_log = millis();
+        Serial.printf("[WiFi] Timer: state=%d ready=%d connected_at=%lu\n",
+            (int)wifi_state, wifi_ready, wifi_connected_at);
+    }
+
     handle_wifi_connecting();
     sync_ntp_poll();
     poll_ap_start_sequence();
