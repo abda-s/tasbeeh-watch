@@ -47,7 +47,7 @@ static void choice_decline_cb(lv_event_t *e) {
 static void choice_connect_cb(lv_event_t *e) {
     if (lv_screen_active() != scr_wifi_setup) return;
     wifi_setup_start_ap();
-    wifi_setup_set_ap_view();
+    wifi_setup_show_scanning();
 }
 
 // ── AP: Cancel setup ──────────────────────────────────────
@@ -61,13 +61,7 @@ static void setup_cancel_cb(lv_event_t *e) {
 static void setup_retry_cb(lv_event_t *e) {
     if (lv_screen_active() != scr_wifi_setup) return;
     wifi_setup_start_ap();
-    lv_qrcode_update(wifi_qr, AP_IP, strlen(AP_IP));
-    lv_label_set_text(wifi_ip_label, AP_IP);
-    if (wifi_status_text)
-        lv_label_set_text(wifi_status_text,
-            "\330\250\330\247\331\206\330\252\330\270\330\247\330\261 \330\247\331\204\330\247\330\252\330\265\330\247\331\204...");
-    if (retry_btn) lv_obj_add_flag(retry_btn, LV_OBJ_FLAG_HIDDEN);
-    if (cancel_btn) lv_obj_clear_flag(cancel_btn, LV_OBJ_FLAG_HIDDEN);
+    wifi_setup_show_scanning();
 }
 
 static void setup_retry_btn_cb(lv_event_t *e) {
@@ -80,11 +74,26 @@ void wifi_setup_on_scan_done(void) {
     // The captive portal web page will fetch /api/scan when loaded
 }
 
+// ── Show scanning state while async scan runs ────────────
+void wifi_setup_show_scanning(void) {
+    if (choice_cont) lv_obj_add_flag(choice_cont, LV_OBJ_FLAG_HIDDEN);
+    if (ap_cont)     lv_obj_clear_flag(ap_cont, LV_OBJ_FLAG_HIDDEN);
+    if (wifi_status_text)
+        lv_label_set_text(wifi_status_text,
+            "\330\254\330\247\330\261\331\212 \330\247\331\204\330\250\330\255\330\253 \330\271\331\206 \330\247\331\204\330\264\330\250\331\203\330\247\330\252...");
+    if (wifi_qr)       lv_obj_add_flag(wifi_qr, LV_OBJ_FLAG_HIDDEN);
+    if (wifi_ip_label) lv_obj_add_flag(wifi_ip_label, LV_OBJ_FLAG_HIDDEN);
+    if (retry_btn)     lv_obj_add_flag(retry_btn, LV_OBJ_FLAG_HIDDEN);
+    if (cancel_btn)    lv_obj_add_flag(cancel_btn, LV_OBJ_FLAG_HIDDEN);
+}
+
 // ── Called by main.cpp when AP was already started elsewhere ──
 // and we just need to show the AP view (no choice, skip straight to QR)
 void wifi_setup_set_ap_view(void) {
     if (choice_cont) lv_obj_add_flag(choice_cont, LV_OBJ_FLAG_HIDDEN);
     if (ap_cont)     lv_obj_clear_flag(ap_cont, LV_OBJ_FLAG_HIDDEN);
+    if (wifi_qr)       lv_obj_clear_flag(wifi_qr, LV_OBJ_FLAG_HIDDEN);
+    if (wifi_ip_label) lv_obj_clear_flag(wifi_ip_label, LV_OBJ_FLAG_HIDDEN);
     lv_qrcode_update(wifi_qr, AP_IP, strlen(AP_IP));
     lv_label_set_text(wifi_ip_label, AP_IP);
     if (wifi_status_text)

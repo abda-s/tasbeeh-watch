@@ -24,10 +24,10 @@ static void settings_back_cb(lv_event_t *e) {
 static void settings_wifi_setup_cb(lv_event_t *e) {
     if (lv_screen_active() != scr_settings) return;
     extern void wifi_setup_start_ap(void);
-    extern void wifi_setup_set_ap_view(void);
+    extern void wifi_setup_show_scanning(void);
     wifi_setup_start_ap();
     push_modal(scr_wifi_setup);
-    wifi_setup_set_ap_view();
+    wifi_setup_show_scanning();
 }
 
 static void settings_qrcode_cb(lv_event_t *e) {

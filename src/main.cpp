@@ -24,6 +24,7 @@ static void my_disp_flush_dma(lv_display_t *disp, const lv_area_t *area, uint8_t
 #include <time.h>
 #include <math.h>
 #include <WiFi.h>
+#include <esp_wifi.h>
 #include <WebServer.h>
 #include <DNSServer.h>
 #include <ArduinoJson.h>
@@ -37,14 +38,6 @@ LV_FONT_DECLARE(font_alexandria_16);
 LV_FONT_DECLARE(font_alexandria_28);
 LV_FONT_DECLARE(font_alexandria_12);
 
-#define BAT_ADC       1
-#define MAX_REMINDERS 10
-
-struct Reminder {
-    int  hour, minute;
-    char label[32];
-    bool enabled;
-};
 
 #include "web_dashboard.h"
 
@@ -73,12 +66,21 @@ static bool ap_timed_out = false;
 static bool wifi_modal_shown = false;
 static bool server_running = false;
 
+// ── Two-phase AP startup ─────────────────────────────────────
+enum ApStartPhase {
+    AP_PHASE_IDLE,
+    AP_PHASE_SCANNING,   // scan running in STA mode, waiting for results
+    AP_PHASE_STARTING,   // scan done, switching to AP + starting server
+};
+static ApStartPhase ap_phase = AP_PHASE_IDLE;
+
 // ── Display sleep ───────────────────────────────────────────
 static lv_display_t *lv_disp = NULL;
 static bool display_sleeping = false;
 #define SLEEP_TIMEOUT_MS 30000
 String scan_ssids[30];
 int    scan_rssi[30];
+int    scan_enc[30];
 int    scan_count = 0;
 
 ServerHelper server(80);
@@ -239,6 +241,8 @@ static void showReminderPopup(int idx) {
     lv_obj_add_event_cb(btn_snooze, snooze_cb, LV_EVENT_CLICKED, NULL);
 }
 
+static void wake_display(void);
+
 static void checkReminders() {
     if (reminderActive) return;
     for (int i = 0; i < MAX_REMINDERS; i++) {
@@ -249,6 +253,7 @@ static void checkReminders() {
                 popupRemIdx = i;
                 reminderActive = true;
                 prefs.putInt("popup_idx", i);
+                if (display_sleeping) wake_display();
                 showReminderPopup(i);
                 return;
             }
@@ -278,16 +283,28 @@ static void battery_timer_cb(lv_timer_t *timer) {
 //  WiFi Management
 // ══════════════════════════════════════════════════════════════
 
-static void sync_ntp() {
+static bool ntp_pending = false;
+static int  ntp_tries   = 0;
+
+static void sync_ntp_start() {
     configTime(3 * 3600, 0, "pool.ntp.org");
+    ntp_pending = true;
+    ntp_tries   = 0;
+}
+
+static void sync_ntp_poll() {
+    if (!ntp_pending) return;
     struct tm t;
-    int tries = 0;
-    while (!getLocalTime(&t) && tries < 20) { delay(500); tries++; }
     if (getLocalTime(&t)) {
         hour_   = t.tm_hour; minute_ = t.tm_min; second_ = t.tm_sec;
         day_    = t.tm_mday; month_   = t.tm_mon + 1; year_ = t.tm_year + 1900;
         saveTime();
         update_home_clock();
+        ntp_pending = false;
+        Serial.println("[NTP] Time synced");
+    } else if (++ntp_tries >= 20) {
+        ntp_pending = false;
+        Serial.println("[NTP] Sync failed (timeout)");
     }
 }
 
@@ -306,28 +323,42 @@ static void stop_dashboard_server() {
     }
 }
 
+static bool has_saved_wifi_credentials() {
+    // WiFi.psk() reads NVS via esp_wifi_get_config — needs WiFi initialized
+    WiFi.mode(WIFI_STA);
+    wifi_config_t conf;
+    esp_err_t err = esp_wifi_get_config(WIFI_IF_STA, &conf);
+    String ssid = (err == ESP_OK) ? String((const char*)conf.sta.ssid) : String();
+    WiFi.mode(WIFI_OFF);
+
+    bool has = (ssid.length() > 0);
+    Serial.printf("[WiFi] Stored SSID: \"%s\" -> %s\n",
+        ssid.c_str(), has ? "will attempt" : "none saved");
+    return has;
+}
+
 static void attempt_wifi_connect() {
     Serial.println("[WiFi] attempt_wifi_connect() ENTER");
-    wifi_state = WIFI_CONNECTING;
-    wifi_connect_start = millis();
-    Serial.println("[WiFi] setting mode STA...");
-    WiFi.mode(WIFI_STA);
-    Serial.println("[WiFi] calling WiFi.begin()...");
-    wl_status_t s = WiFi.begin();
-    Serial.printf("[WiFi] begin() returned %d (0=IDLE 1=NO_SSID 3=CONNECTED 4=FAILED 6=DISCONNECTED)\n", (int)s);
 
-    if (s == WL_NO_SSID_AVAIL) {
-        Serial.println("[WiFi] No stored credentials — showing choice modal now");
+    if (!has_saved_wifi_credentials()) {
+        Serial.println("[WiFi] No stored credentials — showing choice modal");
         wifi_state = WIFI_IDLE;
-        WiFi.mode(WIFI_OFF);
         extern void wifi_setup_show_choice(void);
         push_modal(scr_wifi_setup);
         wifi_setup_show_choice();
         wifi_modal_shown = true;
-        Serial.println("[WiFi] Choice modal pushed");
-    } else {
-        Serial.printf("[WiFi] Will poll status every 500ms (timeout 5s)\n");
+        return;
     }
+
+    wifi_state         = WIFI_CONNECTING;
+    wifi_connect_start = millis();
+    wifi_modal_shown   = false;
+
+    WiFi.persistent(true);              // ensure credentials stay written to NVS
+    WiFi.mode(WIFI_STA);
+    WiFi.setAutoReconnect(true);
+    WiFi.begin();                       // use saved NVS credentials
+    Serial.println("[WiFi] WiFi.begin() called with saved credentials");
 }
 
 void wifi_setup_start_ap() {
@@ -336,45 +367,19 @@ void wifi_setup_start_ap() {
 
     prefs.putBool("wifi_offline", false);
 
-    // Phase 1 — full reset then scan (WiFiManager-style)
-    Serial.println("[WiFi] Phase 1 — full reset...");
+    Serial.println("[WiFi] Phase 1 — reset to STA for scan...");
     WiFi.mode(WIFI_OFF);
-    int deadline = millis() + 1200;
-    while (WiFi.getMode() != WIFI_OFF && millis() < deadline) {
-        delay(0);
-    }
-    Serial.printf("[WiFi] mode OFF confirmed after %lu ms\n",
-        millis() + 1200 - deadline);
-
+    delay(200);
     WiFi.mode(WIFI_STA);
     WiFi.disconnect();
-    delay(500);
+    delay(100);
 
-    Serial.println("[WiFi] starting scan...");
-    scan_count = WiFi.scanNetworks(false, false, true, 500);
-    Serial.printf("[WiFi] scan complete: %d networks\n", scan_count);
-    for (int i = 0; i < scan_count && i < 30; i++) {
-        scan_ssids[i] = WiFi.SSID(i);
-        scan_rssi[i]  = WiFi.RSSI(i);
-        Serial.printf("[WiFi]   %d: %s (%d dBm)\n", i + 1,
-            scan_ssids[i].c_str(), scan_rssi[i]);
-    }
-    WiFi.scanDelete();
+    scan_count = 0;
+    Serial.println("[WiFi] Starting async scan...");
+    WiFi.scanNetworks(true, false, true, 400);
 
-    // Phase 2 — start AP-only portal
-    Serial.println("[WiFi] Phase 2 — starting AP...");
-    WiFi.mode(WIFI_AP);
-    WiFi.softAP("TasbeehWatch");
-
-    dnsServer.start(53, "*", WiFi.softAPIP());
-    server.clearAllHandlers();
-    server.stop();
-    setup_wifi_portal(&server);
-
-    wifi_state = WIFI_AP_MODE;
-    ap_start_time = millis();
-    ap_timed_out = false;
-    Serial.println("[WiFi] AP portal ready");
+    ap_phase = AP_PHASE_SCANNING;
+    Serial.println("[WiFi] Async scan started — will switch to AP once done.");
 }
 
 void wifi_setup_stop_ap() {
@@ -383,6 +388,7 @@ void wifi_setup_stop_ap() {
     WiFi.softAPdisconnect(true);
     WiFi.mode(WIFI_OFF);
     wifi_state = WIFI_IDLE;
+    ap_phase = AP_PHASE_IDLE;
 }
 
 void wifi_setup_cancel() {
@@ -397,16 +403,18 @@ void wifi_setup_cancel() {
 
 void erase_wifi_credentials() {
     Serial.println("[WiFi] Erasing stored credentials...");
-    WiFi.mode(WIFI_AP_STA);
-    WiFi.persistent(true);
-    WiFi.disconnect(true, true);
-    delay(500);
-    WiFi.persistent(false);
+
+    WiFi.persistent(true);             // must be ON for disconnect(true,true) to erase NVS
+    WiFi.mode(WIFI_STA);
+    WiFi.disconnect(true, true);       // first true = disconnect, second = erase NVS
+    delay(300);
     WiFi.mode(WIFI_OFF);
+    // do NOT set persistent(false) — leave it ON for the next WiFi.begin()
+
     prefs.putBool("wifi_offline", false);
-    wifi_state = WIFI_IDLE;
-    wifi_ready = false;
-    wifi_local_ip = "";
+    wifi_state      = WIFI_IDLE;
+    wifi_ready      = false;
+    wifi_local_ip   = "";
     wifi_local_ssid = "";
     update_wifi_status_display();
     Serial.println("[WiFi] Credentials erased");
@@ -418,16 +426,19 @@ void wifi_ap_save_credentials(String ssid, String pass) {
     dnsServer.stop();
     server.stop();
     server_running = false;
+    ap_phase = AP_PHASE_IDLE;
     WiFi.softAPdisconnect(true);
 
-    // Connect to provided network
+    WiFi.persistent(true);              // ensure credentials written to NVS
     WiFi.mode(WIFI_STA);
     WiFi.begin(ssid.c_str(), pass.c_str());
 
-    wifi_state = WIFI_CONNECTING;
+    wifi_state         = WIFI_CONNECTING;
     wifi_connect_start = millis();
-    wifi_modal_shown = true;
-    ap_timed_out = false;
+    wifi_modal_shown   = true;
+    ap_timed_out       = false;
+
+    Serial.printf("[WiFi] Saving + connecting to \"%s\"\n", ssid.c_str());
 }
 
 void wifi_setup_show_qr() {
@@ -445,79 +456,123 @@ static void check_wifi_ap_timeout() {
         wifi_setup_stop_ap();
         wifi_setup_start_ap(); // restart AP + async scan for retry
         if (lv_screen_active() == scr_wifi_setup) {
-            extern void wifi_setup_show_timeout(void);
-            wifi_setup_show_timeout();
+            extern void wifi_setup_show_scanning(void);
+            wifi_setup_show_scanning();
         }
     }
 }
 
 // ── Async scan poll ─────────────────────────────────────────
 static void poll_wifi_scan() {
-    // scan is now synchronous in wifi_setup_start_ap() — nothing to poll
+    if (ap_phase != AP_PHASE_SCANNING) return;
+
+    int n = WiFi.scanComplete();
+    if (n == WIFI_SCAN_RUNNING) return;
+
+    ap_phase = AP_PHASE_IDLE;
+
+    if (n > 0) {
+        scan_count = n < 30 ? n : 30;
+        for (int i = 0; i < scan_count; i++) {
+            scan_ssids[i] = WiFi.SSID(i);
+            scan_rssi[i]  = WiFi.RSSI(i);
+            scan_enc[i]   = WiFi.encryptionType(i);
+            Serial.printf("[WiFi] scan[%d]: %s (%d dBm)\n", i,
+                scan_ssids[i].c_str(), scan_rssi[i]);
+        }
+        Serial.printf("[WiFi] Scan done: %d networks found.\n", scan_count);
+    } else {
+        scan_count = 0;
+        Serial.printf("[WiFi] Scan failed or empty (n=%d).\n", n);
+    }
+    WiFi.scanDelete();
+
+    // Phase 2 — switch to AP, start portal
+    Serial.println("[WiFi] Phase 2 — switching to AP...");
+    WiFi.mode(WIFI_AP);
+    delay(100);
+    WiFi.softAP("TasbeehWatch");
+
+    dnsServer.start(53, "*", WiFi.softAPIP());
+    server.clearAllHandlers();
+    server.stop();
+    setup_wifi_portal(&server);
+    server_running = true;
+
+    wifi_state    = WIFI_AP_MODE;
+    ap_start_time = millis();
+    ap_timed_out  = false;
+
+    Serial.printf("[WiFi] AP ready. IP: %s  Networks: %d\n",
+        WiFi.softAPIP().toString().c_str(), scan_count);
+
+    // Notify UI: AP is live
+    if (lv_screen_active() == scr_wifi_setup) {
+        extern void wifi_setup_set_ap_view(void);
+        wifi_setup_set_ap_view();
+    }
 }
+
+#define WIFI_CONNECT_TIMEOUT_MS  15000UL
 
 static void handle_wifi_connecting() {
     if (wifi_state != WIFI_CONNECTING) return;
 
-    static unsigned long last_status_print = 0;
-    if (millis() - last_status_print > 2000) {
-        last_status_print = millis();
-        Serial.printf("[WiFi] polling... status=%d  elapsed=%lu ms\n",
-            (int)WiFi.status(), millis() - wifi_connect_start);
-    }
+    wl_status_t status = WiFi.status();
 
-    if (WiFi.status() == WL_CONNECTED) {
-        wifi_ready = true;
-        wifi_local_ip = WiFi.localIP().toString();
+    if (status == WL_CONNECTED) {
+        wifi_ready      = true;
+        wifi_local_ip   = WiFi.localIP().toString();
         wifi_local_ssid = WiFi.SSID();
-        wifi_state = WIFI_CONNECTED;
+        wifi_state      = WIFI_CONNECTED;
         prefs.putBool("wifi_offline", false);
-        Serial.printf("[WiFi] Connected to %s IP=%s\n",
-            wifi_local_ssid.c_str(), wifi_local_ip.c_str());
 
-        // NTP sync
-        sync_ntp();
+        Serial.printf("[WiFi] Connected to \"%s\"  IP=%s  in %lu ms\n",
+            wifi_local_ssid.c_str(),
+            wifi_local_ip.c_str(),
+            millis() - wifi_connect_start);
 
-        // Start dashboard server
+        sync_ntp_start();
         start_dashboard_server();
-
-        // Update settings UI
         update_wifi_status_display();
 
-        // If WiFi setup modal is active, dismiss it
-        if (lv_screen_active() == scr_wifi_setup) {
-            pop_modal();
-        }
+        if (lv_screen_active() == scr_wifi_setup) pop_modal();
         return;
     }
 
-    // Check timeout — 5 seconds
-    unsigned long timeout = 5000;
-    if (wifi_connect_start > 0 && millis() - wifi_connect_start > timeout) {
-        Serial.println("[WiFi] Timeout — connection failed");
-        wifi_state = WIFI_IDLE;
-        WiFi.disconnect();
+    static unsigned long last_log = 0;
+    if (millis() - last_log > 3000) {
+        last_log = millis();
+        Serial.printf("[WiFi] status=%d  elapsed=%lu / %lu ms\n",
+            (int)status, millis() - wifi_connect_start, WIFI_CONNECT_TIMEOUT_MS);
+    }
 
-        // Show choice modal (connect or stay offline) on first failure
-        if (!wifi_modal_shown) {
-            extern void wifi_setup_show_choice(void);
-            push_modal(scr_wifi_setup);
-            wifi_setup_show_choice();
-            wifi_modal_shown = true;
-        }
-        // Captive portal save failed — restart AP + show timeout
-        else if (wifi_modal_shown) {
-            wifi_setup_start_ap();
-            if (lv_screen_active() == scr_wifi_setup) {
-                extern void wifi_setup_show_timeout(void);
-                wifi_setup_show_timeout();
-            }
+    if (millis() - wifi_connect_start < WIFI_CONNECT_TIMEOUT_MS) return;
+
+    Serial.printf("[WiFi] Timed out after %lu ms\n", WIFI_CONNECT_TIMEOUT_MS);
+    WiFi.disconnect(true);
+    WiFi.mode(WIFI_OFF);
+    wifi_state = WIFI_IDLE;
+
+    if (!wifi_modal_shown) {
+        Serial.println("[WiFi] Showing choice modal (boot timeout)");
+        extern void wifi_setup_show_choice(void);
+        push_modal(scr_wifi_setup);
+        wifi_setup_show_choice();
+        wifi_modal_shown = true;
+    } else {
+        Serial.println("[WiFi] Portal save timed out — restarting AP");
+        wifi_setup_start_ap();
+        if (lv_screen_active() == scr_wifi_setup) {
+            extern void wifi_setup_show_timeout(void);
+            wifi_setup_show_timeout();
         }
     }
 }
 
 static void wifi_timer_cb(lv_timer_t *timer) {
     handle_wifi_connecting();
+    sync_ntp_poll();
     poll_wifi_scan();
     check_wifi_ap_timeout();
 
@@ -543,13 +598,14 @@ static void sleep_display() {
     display_sleeping = true;
 }
 
+static bool wake_pending = false;
+static uint32_t wake_time = 0;
+
 static void wake_display() {
     tft.writecommand(0x11);                     // TFT_SLPOUT
-    delay(120);                                  // oscillator stabilize
-    tft.writecommand(0x29);                     // TFT_DISPON
-    digitalWrite(TFT_BL, TFT_BACKLIGHT_ON);
-    lv_display_trigger_activity(lv_disp);
-    display_sleeping = false;
+    display_sleeping = false;                   // mark awake immediately so touch works
+    wake_pending = true;
+    wake_time = millis();                       // defer DISPON + backlight by 120ms
 }
 
 static void screen_sleep_cb(lv_timer_t *t) {
@@ -698,6 +754,12 @@ void setup() {
 }
 
 void loop() {
+    if (wake_pending && millis() - wake_time >= 120) {
+        wake_pending = false;
+        tft.writecommand(0x29);                 // TFT_DISPON
+        digitalWrite(TFT_BL, TFT_BACKLIGHT_ON);
+        lv_display_trigger_activity(lv_disp);
+    }
     lv_timer_handler();
     delay(5);
 }

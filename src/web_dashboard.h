@@ -21,6 +21,16 @@ struct ServerHelper : public WebServer {
     }
 };
 
+// ── Types ─────────────────────────────────────────────────
+struct Reminder {
+    int  hour, minute;
+    char label[32];
+    bool enabled;
+};
+
+// ── Globals from main.cpp ─────────────────────────────────
+#define BAT_ADC 1
+#define MAX_REMINDERS 10
 extern Preferences prefs;
 extern int hour_, minute_, day_, month_, year_;
 extern uint32_t tasbeehCount;
@@ -28,13 +38,23 @@ extern uint32_t istighfarCount;
 extern uint32_t totalTasbeeh;
 extern uint32_t totalIstighfar;
 extern int tasbeeh_phrase_idx;
-
-#define MAX_REMINDERS 10
 extern Reminder reminders[MAX_REMINDERS];
+extern bool reminderFired[];
+
+// ── WiFi scan globals ─────────────────────────────────────
+extern int scan_count;
+extern String scan_ssids[];
+extern int scan_rssi[];
+extern int scan_enc[];
+
+// ── Functions from main.cpp ───────────────────────────────
+extern void saveTime(void);
+extern void saveReminders(void);
+extern void wifi_ap_save_credentials(String ssid, String pass);
 
 static int getBatteryPercentWeb() {
     long sum = 0;
-    for (int i = 0; i < 16; i++) { sum += analogReadMilliVolts(1); delay(1); }
+    for (int i = 0; i < 16; i++) { sum += analogReadMilliVolts(BAT_ADC); delay(1); }
     float v_adc = sum / 16.0f / 1000.0f;
     float v_bat = v_adc * 3.0f;
     int pct = (int)((v_bat - 3.5f) / (4.15f - 3.5f) * 100.0f);
@@ -258,7 +278,10 @@ function buildRemList(rems){
 }
 
 /* ── Load state from device ── */
+var loadInFlight=false;
 async function load(){
+  if(loadInFlight) return;
+  loadInFlight=true;
   try{
     var resp=await fetch('/api/state');
     if(!resp.ok) throw new Error('HTTP '+resp.status);
@@ -279,11 +302,16 @@ async function load(){
   }catch(e){
     console.error('load error',e);
     toast('خطأ في الاتصال',false);
+  }finally{
+    loadInFlight=false;
   }
 }
 
 /* ── Save reminders ── */
+var saveBusy=false;
 async function saveRem(){
+  if(saveBusy) return;
+  saveBusy=true;
   var rems=[];
   for(var i=0;i<10;i++){
     var hEl=document.getElementById('rh'+i);
@@ -302,7 +330,9 @@ async function saveRem(){
       body:JSON.stringify({reminders:rems})});
     if(!resp.ok) throw new Error('HTTP '+resp.status);
     toast('تم حفظ التذكيرات!',true);
+    remindersLoaded=false;  // allow next load() to rebuild fresh HTML
   }catch(e){toast('خطأ في الحفظ',false);}
+  saveBusy=false;
 }
 
 /* ── Set time ── */
@@ -454,8 +484,7 @@ async function loadNets(retry){
       for(var i=0;i<nets.length;i++){
         var n=nets[i];
         var safe=escHtml(n.ssid);
-        h+='<div class="net-item" onclick="pick(this,\''+
-          n.ssid.replace(/\\/g,'\\\\').replace(/'/g,"\\'")+'\')">'
+        h+='<div class="net-item" data-ssid="'+safe+'">'
           +'<span class="net-lock">'+(n.open?'':'🔒')+'</span>'
           +'<span class="net-ssid">'+safe+'</span>'
           +sigBars(n.rssi)
@@ -470,12 +499,17 @@ async function loadNets(retry){
   }
 }
 
-function pick(el,ssid){
+// Event delegation for network list — avoids XSS in onclick
+document.getElementById('netlist').addEventListener('click',function(e){
+  var el=e.target.closest('.net-item');
+  if(!el) return;
+  var ssid=el.getAttribute('data-ssid');
+  if(!ssid) return;
   document.querySelectorAll('.net-item').forEach(function(x){x.classList.remove('sel');});
   el.classList.add('sel');
   document.getElementById('ssid').value=ssid;
   document.getElementById('pass').focus();
-}
+});
 
 function toast(msg,ok){
   var t=document.getElementById('toast');
@@ -514,7 +548,7 @@ loadNets();
 
 // ── API: Dashboard state ──────────────────────────────────────
 static void handle_api_state(WebServer *srv) {
-    StaticJsonDocument<2048> doc;
+    StaticJsonDocument<4096> doc;
     doc["hour"]   = hour_;    doc["minute"] = minute_;
     doc["day"]    = day_;     doc["month"]  = month_;
     doc["year"]   = year_;    doc["second"] = 0;
@@ -537,45 +571,55 @@ static void handle_api_state(WebServer *srv) {
 
 // ── API: Set time ─────────────────────────────────────────────
 static void handle_api_time(WebServer *srv) {
-    if (srv->hasArg("plain")) {
-        StaticJsonDocument<256> doc;
-        DeserializationError err = deserializeJson(doc, srv->arg("plain"));
-        if (!err) {
-            hour_   = doc["hour"]   | hour_;
-            minute_ = doc["minute"] | minute_;
-            day_    = doc["day"]    | day_;
-            month_  = doc["month"]  | month_;
-            year_   = doc["year"]   | year_;
-            extern void saveTime();
-            saveTime();
-        }
+    if (!srv->hasArg("plain")) {
+        srv->send(400, "application/json", "{\"ok\":false,\"error\":\"no body\"}");
+        return;
     }
+    StaticJsonDocument<256> doc;
+    DeserializationError err = deserializeJson(doc, srv->arg("plain"));
+    if (err) {
+        srv->send(500, "application/json", "{\"ok\":false,\"error\":\"json\"}");
+        return;
+    }
+    hour_   = doc["hour"]   | hour_;
+    minute_ = doc["minute"] | minute_;
+    day_    = doc["day"]    | day_;
+    month_  = doc["month"]  | month_;
+    year_   = doc["year"]   | year_;
+    saveTime();
     srv->send(200, "application/json", "{\"ok\":true}");
 }
 
 // ── API: Set reminders ────────────────────────────────────────
 static void handle_api_reminders(WebServer *srv) {
-    if (srv->hasArg("plain")) {
-        StaticJsonDocument<4096> doc;
-        DeserializationError err = deserializeJson(doc, srv->arg("plain"));
-        if (!err) {
-            JsonArray arr = doc["reminders"].as<JsonArray>();
-            for (int i = 0; i < MAX_REMINDERS && i < (int)arr.size(); i++) {
-                reminders[i].hour    = arr[i]["hour"]    | reminders[i].hour;
-                reminders[i].minute  = arr[i]["minute"]  | reminders[i].minute;
-                reminders[i].enabled = arr[i]["enabled"] | reminders[i].enabled;
-                const char *lbl = arr[i]["label"];
-                if (lbl && strlen(lbl) > 0) {
-                    strncpy(reminders[i].label, lbl, 31);
-                    reminders[i].label[31] = '\0';
-                }
-                extern bool reminderFired[];
-                reminderFired[i] = false;
-            }
-            extern void saveReminders();
-            saveReminders();
-        }
+    if (!srv->hasArg("plain")) {
+        srv->send(400, "application/json", "{\"ok\":false,\"error\":\"no body\"}");
+        return;
     }
+    DynamicJsonDocument doc(8192);
+    DeserializationError err = deserializeJson(doc, srv->arg("plain"));
+    if (err) {
+        Serial.printf("[API] reminders JSON error: %s\n", err.c_str());
+        srv->send(500, "application/json", "{\"ok\":false,\"error\":\"json\"}");
+        return;
+    }
+    JsonArray arr = doc["reminders"].as<JsonArray>();
+    if (arr.isNull()) {
+        srv->send(400, "application/json", "{\"ok\":false,\"error\":\"missing reminders\"}");
+        return;
+    }
+    for (int i = 0; i < MAX_REMINDERS && i < (int)arr.size(); i++) {
+        reminders[i].hour    = arr[i]["hour"]    | reminders[i].hour;
+        reminders[i].minute  = arr[i]["minute"]  | reminders[i].minute;
+        reminders[i].enabled = arr[i]["enabled"] | reminders[i].enabled;
+        const char *lbl = arr[i]["label"];
+        if (lbl) {
+            strncpy(reminders[i].label, lbl, 31);
+            reminders[i].label[31] = '\0';
+        }
+        reminderFired[i] = false;
+    }
+    saveReminders();
     srv->send(200, "application/json", "{\"ok\":true}");
 }
 
@@ -602,16 +646,13 @@ static void setup_wifi_portal(WebServer *srv) {
         srv->send(200, "text/html", WIFI_CONFIG_HTML);
     });
     srv->on("/api/scan", HTTP_GET, [srv]() {
-        extern int scan_count;
-        extern String scan_ssids[];
-        extern int scan_rssi[];
         StaticJsonDocument<4096> doc;
         JsonArray arr = doc.to<JsonArray>();
         for (int i = 0; i < scan_count && i < 30; i++) {
             JsonObject o = arr.createNestedObject();
             o["ssid"]  = scan_ssids[i];
             o["rssi"]  = scan_rssi[i];
-            o["open"]  = (WiFi.encryptionType(i) == WIFI_AUTH_OPEN);
+            o["open"]  = (scan_enc[i] == WIFI_AUTH_OPEN);
         }
         String out; serializeJson(doc, out);
         srv->send(200, "application/json", out);
@@ -623,7 +664,6 @@ static void setup_wifi_portal(WebServer *srv) {
             if (!err) {
                 String ssid = doc["ssid"].as<String>();
                 String pass = doc["password"].as<String>();
-                extern void wifi_ap_save_credentials(String ssid, String pass);
                 wifi_ap_save_credentials(ssid, pass);
             }
         }

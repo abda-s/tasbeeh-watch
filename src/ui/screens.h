@@ -91,6 +91,7 @@ void create_screen_timeedit(void);
 void create_screen_qrcode(void);
 void qrcode_set_url(const char *url);
 void create_screen_wifi_setup(void);
+void wifi_setup_show_scanning(void);
 
 // ── Update helpers (called from main timer) ───────────────────
 void update_home_clock(void);
