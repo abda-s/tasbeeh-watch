@@ -65,14 +65,22 @@ static unsigned long ap_start_time = 0;
 static bool ap_timed_out = false;
 static bool wifi_modal_shown = false;
 static bool server_running = false;
+static bool wifi_bg_retry  = false;     // true = silent background retry, no modal on timeout
+static bool had_credentials = false;    // set when creds found/saved, avoids NVS re-reads
+static unsigned long last_conn_check  = 0;
+static unsigned long last_bg_retry    = 0;
+#define CONN_LOST_CHECK_MS   2000
+#define BG_RETRY_INTERVAL_MS 30000
 
 // ── Two-phase AP startup ─────────────────────────────────────
 enum ApStartPhase {
     AP_PHASE_IDLE,
+    AP_PHASE_RESETTING,  // waiting for WIFI_OFF → WIFI_STA to settle (non-blocking)
     AP_PHASE_SCANNING,   // scan running in STA mode, waiting for results
     AP_PHASE_STARTING,   // scan done, switching to AP + starting server
 };
 static ApStartPhase ap_phase = AP_PHASE_IDLE;
+static unsigned long ap_phase_start = 0;
 
 // ── Display sleep ───────────────────────────────────────────
 static lv_display_t *lv_disp = NULL;
@@ -353,6 +361,7 @@ static void attempt_wifi_connect() {
     wifi_state         = WIFI_CONNECTING;
     wifi_connect_start = millis();
     wifi_modal_shown   = false;
+    had_credentials    = true;
 
     WiFi.persistent(true);              // ensure credentials stay written to NVS
     WiFi.mode(WIFI_STA);
@@ -367,19 +376,11 @@ void wifi_setup_start_ap() {
 
     prefs.putBool("wifi_offline", false);
 
-    Serial.println("[WiFi] Phase 1 — reset to STA for scan...");
+    Serial.println("[WiFi] Phase 0 — reset to OFF, async...");
     WiFi.mode(WIFI_OFF);
-    delay(200);
-    WiFi.mode(WIFI_STA);
-    WiFi.disconnect();
-    delay(100);
-
+    ap_phase = AP_PHASE_RESETTING;
+    ap_phase_start = millis();
     scan_count = 0;
-    Serial.println("[WiFi] Starting async scan...");
-    WiFi.scanNetworks(true, false, true, 400);
-
-    ap_phase = AP_PHASE_SCANNING;
-    Serial.println("[WiFi] Async scan started — will switch to AP once done.");
 }
 
 void wifi_setup_stop_ap() {
@@ -436,6 +437,7 @@ void wifi_ap_save_credentials(String ssid, String pass) {
     wifi_state         = WIFI_CONNECTING;
     wifi_connect_start = millis();
     wifi_modal_shown   = true;
+    had_credentials    = true;
     ap_timed_out       = false;
 
     Serial.printf("[WiFi] Saving + connecting to \"%s\"\n", ssid.c_str());
@@ -526,6 +528,7 @@ static void handle_wifi_connecting() {
         wifi_local_ssid = WiFi.SSID();
         wifi_state      = WIFI_CONNECTED;
         prefs.putBool("wifi_offline", false);
+        wifi_bg_retry   = false;
 
         Serial.printf("[WiFi] Connected to \"%s\"  IP=%s  in %lu ms\n",
             wifi_local_ssid.c_str(),
@@ -550,9 +553,17 @@ static void handle_wifi_connecting() {
     if (millis() - wifi_connect_start < WIFI_CONNECT_TIMEOUT_MS) return;
 
     Serial.printf("[WiFi] Timed out after %lu ms\n", WIFI_CONNECT_TIMEOUT_MS);
-    WiFi.disconnect(true);
-    WiFi.mode(WIFI_OFF);
+
+    bool was_bg = wifi_bg_retry;
+    wifi_bg_retry = false;
+
+    WiFi.disconnect(false);       // lightweight — keep radio in STA, don't wipe config
     wifi_state = WIFI_IDLE;
+
+    if (was_bg) {
+        Serial.println("[WiFi] Background retry timed out — will retry later");
+        return;
+    }
 
     if (!wifi_modal_shown) {
         Serial.println("[WiFi] Showing choice modal (boot timeout)");
@@ -570,11 +581,67 @@ static void handle_wifi_connecting() {
     }
 }
 
+// ── Background connection monitoring ──────────────────────────
+
+// Detect silent disconnect while we thought we were connected
+static void check_connection_lost() {
+    if (wifi_state != WIFI_CONNECTED) return;
+    if (millis() - last_conn_check < CONN_LOST_CHECK_MS) return;
+    last_conn_check = millis();
+
+    wl_status_t s = WiFi.status();
+    if (s == WL_CONNECTED) return;
+
+    Serial.printf("[WiFi] Connection lost (status=%d) — was CONNECTED\n", (int)s);
+    wifi_ready      = false;
+    wifi_local_ip   = "";
+    wifi_local_ssid = "";
+    wifi_state      = WIFI_IDLE;
+    stop_dashboard_server();
+    update_wifi_status_display();
+}
+
+// Periodically retry when idle and credentials exist
+static void background_retry_connect() {
+    if (wifi_state == WIFI_CONNECTING || wifi_state == WIFI_AP_MODE) return;
+    if (wifi_state == WIFI_CONNECTED) return;
+    if (millis() - last_bg_retry < BG_RETRY_INTERVAL_MS) return;
+    last_bg_retry = millis();
+
+    // Only attempt if we have saved credentials (try begin — safe, returns immediately)
+    if (!had_credentials) return;   // never had saved creds, nothing to retry
+
+    Serial.println("[WiFi] Background retry — attempting reconnect");
+    wifi_state         = WIFI_CONNECTING;
+    wifi_connect_start = millis();
+    wifi_bg_retry      = true;
+
+    // Only switch mode if necessary — getMode() is cheap, mode() is expensive
+    if (WiFi.getMode() != WIFI_STA) {
+        WiFi.mode(WIFI_STA);
+    }
+    WiFi.begin();
+}
+
+// ── Async AP start sequence (non-blocking) ───────────────────
+static void poll_ap_start_sequence() {
+    if (ap_phase != AP_PHASE_RESETTING) return;
+    if (millis() - ap_phase_start < 200) return;   // let OFF settle, no blocking
+    WiFi.mode(WIFI_STA);
+    WiFi.disconnect();
+    WiFi.scanNetworks(true, false, true, 400);
+    ap_phase = AP_PHASE_SCANNING;
+    Serial.println("[WiFi] Async scan started.");
+}
+
 static void wifi_timer_cb(lv_timer_t *timer) {
     handle_wifi_connecting();
     sync_ntp_poll();
+    poll_ap_start_sequence();
     poll_wifi_scan();
     check_wifi_ap_timeout();
+    check_connection_lost();
+    background_retry_connect();
 
     // Handle AP mode DNS + HTTP in timer (called every 100ms from loop indirectly)
     if (wifi_state == WIFI_AP_MODE) {
