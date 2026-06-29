@@ -67,9 +67,11 @@ static bool wifi_modal_shown = false;
 static bool server_running = false;
 static bool wifi_bg_retry  = false;     // true = silent background retry, no modal on timeout
 static bool had_credentials = false;    // set when creds found/saved, avoids NVS re-reads
-static unsigned long last_conn_check  = 0;
-static unsigned long last_bg_retry    = 0;
+static unsigned long last_conn_check    = 0;
+static unsigned long last_bg_retry      = 0;
+static unsigned long wifi_connected_at  = 0;
 #define CONN_LOST_CHECK_MS   2000
+#define CONN_STABLE_GRACE_MS 5000
 #define BG_RETRY_INTERVAL_MS 30000
 
 // ── Two-phase AP startup ─────────────────────────────────────
@@ -527,6 +529,7 @@ static void handle_wifi_connecting() {
         wifi_local_ip   = WiFi.localIP().toString();
         wifi_local_ssid = WiFi.SSID();
         wifi_state      = WIFI_CONNECTED;
+        wifi_connected_at = millis();
         prefs.putBool("wifi_offline", false);
         wifi_bg_retry   = false;
 
@@ -586,6 +589,7 @@ static void handle_wifi_connecting() {
 // Detect silent disconnect while we thought we were connected
 static void check_connection_lost() {
     if (wifi_state != WIFI_CONNECTED) return;
+    if (millis() - wifi_connected_at < CONN_STABLE_GRACE_MS) return;
     if (millis() - last_conn_check < CONN_LOST_CHECK_MS) return;
     last_conn_check = millis();
 
@@ -676,6 +680,7 @@ static void wake_display() {
 }
 
 static void screen_sleep_cb(lv_timer_t *t) {
+    if (reminderActive) return;
     if (!display_sleeping && lv_disp
         && lv_display_get_inactive_time(lv_disp) > SLEEP_TIMEOUT_MS) {
         sleep_display();
