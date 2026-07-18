@@ -66,7 +66,8 @@ static bool display_sleeping = false;
 // stopping lv_timer_handler() entirely — clock tick, reminder check, and
 // touch-wake detection all still run, just ~40x less often.
 #define SLEEP_TICK_MS 200
-#define AWAKE_CPU_MHZ 240
+// #define AWAKE_CPU_MHZ 240
+#define AWAKE_CPU_MHZ 160  // UI is light (partial redraws over 40MHz SPI+DMA); 240 not needed
 #define SLEEP_CPU_MHZ 80
 
 // Backlight PWM (replaces plain digitalWrite on/off)
@@ -288,7 +289,6 @@ static void sleep_display() {
     ledcWrite(TFT_BL, BL_DUTY_OFF);
     tft.writecommand(0x10);                     // TFT_SLPIN
     display_sleeping = true;
-    pause_home_swipe_hint();                    // stop the endless swipe-hint anim (any screen)
 
     detachInterrupt(TOUCH_IRQ);                  // don't catch sleep()'s own reset glitch below
     touch.sleep();                               // reset pulse + standby register write
@@ -311,13 +311,17 @@ static void wake_display() {
     setCpuFrequencyMhz(AWAKE_CPU_MHZ);
     tft.writecommand(0x11);                     // TFT_SLPOUT
     display_sleeping = false;                   // mark awake immediately so touch works
-    resume_home_swipe_hint();
+    lv_display_trigger_activity(lv_disp);       // reset inactivity NOW — otherwise
+                                                // screen_sleep_cb can fire inside the
+                                                // 120ms window below and re-sleep the
+                                                // panel (backlight on + black screen)
     wake_pending = true;
     wake_time = millis();                       // defer DISPON + backlight by 120ms
 }
 
 static void screen_sleep_cb(lv_timer_t *t) {
     if (reminderActive) return;
+    if (wake_pending) return;   // mid-wake: never re-sleep between SLPOUT and DISPON
     if (!display_sleeping && lv_disp
         && lv_display_get_inactive_time(lv_disp) > SLEEP_TIMEOUT_MS) {
         sleep_display();
@@ -487,7 +491,12 @@ void loop() {
         }
         delay(20);
     } else {
-        lv_timer_handler();
-        delay(5);
+        // Adaptive idle: lv_timer_handler() returns the ms until the next
+        // scheduled LVGL timer — sleep exactly that long instead of a fixed
+        // 5ms, so the CPU spends the gaps in the FreeRTOS idle task (WFI)
+        // rather than waking ~200x/s to find nothing to do.
+        uint32_t wait_ms = lv_timer_handler();
+        if (wait_ms == LV_NO_TIMER_READY) wait_ms = LV_DEF_REFR_PERIOD;
+        delay(constrain(wait_ms, 1, 50));   // cap keeps wake_pending's 120ms deferral timely
     }
 }
