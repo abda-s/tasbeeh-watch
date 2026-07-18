@@ -28,7 +28,9 @@ LVGL v9, TFT_eSPI, and the Waveshare ESP32-S3-Touch-LCD-1.28 round display.
 ```
 
 **3-screen ring:** Home ↔ Istighfar ↔ Tasbeeh (swipe left/right)
-**Swipe arrows** (`◂` / `▸`) at screen edges animate subtly to indicate more screens.
+**Swipe arrows** (`◂` / `▸`) at screen edges indicate more screens (static — the
+sway animation was removed in V1.21: it forced full-rate redraws forever and
+measured ~10% of screen-on battery draw).
 **Modals:** Settings (tap gear or swipe-down from home), TimeEdit (long-press clock) — swipe down or left to dismiss.
 
 ### Screen accent colors
@@ -64,7 +66,7 @@ src/
 │   ├── screen_home.cpp           # Clock screen: 12h stacked time + AM/PM, day, date, seconds arc, swipe arrows
 │   ├── screen_istighfar.cpp      # Istighfar counter: tap to count, 0→100 green arc
 │   ├── screen_tasbeeh.cpp        # Tasbeeh counter: 3 phrases × 33, blue arc, progress dots, phrase persists across boot
-│   ├── screen_settings.cpp       # Settings (IP display, back button)
+│   ├── screen_settings.cpp       # Settings (currently empty — title + back button)
 │   └── screen_timeedit.cpp       # 12h time editor: HH:MM AM/PM, DD/MM/YYYY, validation, back arrow
 ├── font_reem_kufi_72.c           # Clock digits — Reem Kufi 72px 4bpp
 ├── font_reem_kufi_48.c           # Counter digits — Reem Kufi 48px 4bpp
@@ -299,14 +301,53 @@ Saved when the phrase advances (at 33) and loaded on boot.
 | Optimization | What | Where |
 |---|---|---|
 | Double buffering | 2× 57KB buffers (partial mode) — renders into buf2 while buf1 flushes | `main.cpp` |
-| 80 MHz SPI | `-D SPI_FREQUENCY=80000000` in build flags | `platformio.ini` |
+| 40 MHz SPI | `SPI_FREQUENCY 40000000` in the TFT_eSPI setup header | `Setup302_...GC9A01.h` |
 | `-O2` optimization | Compiler optimizes for speed not size | `platformio.ini` |
 | Flush batching | SPI transaction stays open across dirty rectangles within a frame | `main.cpp` flush callback |
-| `delay(1)` in loop | Minimal idle between LVGL renders | `main.cpp` |
+| Adaptive idle | `loop()` sleeps until LVGL's next scheduled timer (`lv_timer_handler()` return value) instead of a fixed short delay | `main.cpp` |
 | Circle cache 16 | Anti-alias cache for round display elements | `lv_conf.h` |
 | FPS counter off | `LV_USE_SYSMON=0`, `LV_USE_PERF_MONITOR=0` | `lv_conf.h` |
 
-Current: **RAM 60.4%** (198KB / 328KB), **Flash ~26%** (815KB / 3.1MB).
+Current: **RAM 60.4%** (198KB / 328KB), **Flash ~24%** (753KB / 3.1MB).
+
+---
+
+## Power Management (V1.2 / V1.21)
+
+Measured with the dual-port INA226 profiler in `scripts/power_profiler/`
+(fuses current samples with firmware `[SCREEN_ON]` / `[SCREEN_OFF]` serial
+markers on one timeline).
+
+| State | V1 (WiFi) | V1.1 (no WiFi) | V1.21 |
+|---|---|---|---|
+| Screen on | 90 mA | 85 mA | **~50 mA** |
+| Screen off (idle) | 51 mA | 35 mA | **~30 mA** |
+
+What V1.2/V1.21 does:
+
+- **Backlight PWM** (`ledcAttach`/`ledcWrite` on `TFT_BL`, 5 kHz, 8-bit) —
+  duty `BL_DUTY_ON = 70` (~27%) instead of always-on full brightness. The
+  backlight was roughly half the screen-on budget.
+- **CPU frequency scaling** — 160 MHz awake (240 was never needed for this
+  UI), 80 MHz while the display sleeps.
+- **Display sleep** — after 30 s inactivity (`SLEEP_TIMEOUT_MS`): backlight
+  off, panel `SLPIN`, touch controller into hardware standby, loop throttled
+  to a 200 ms LVGL tick (clock/reminders still run). Any touch wakes it.
+- **Touch wake path** — `touch.sleep()`'s internal reset pulse glitches the
+  IRQ line, so the library ISR is detached around it and a minimal wake ISR
+  (`touch_wake_isr`) is armed instead; `touch.begin()` re-inits on wake.
+  Without this the screen woke itself ~120 ms after every sleep.
+- **Static swipe arrows** — a running LVGL animation invalidates its object
+  every refresh cycle forever; the old arrow sway cost ~10% of screen-on
+  charge.
+- **Wake race fix (V1.21)** — inactivity is reset immediately on wake and
+  `screen_sleep_cb` is blocked during the 120 ms deferred backlight window,
+  otherwise the panel could re-sleep mid-wake leaving a lit black screen.
+
+Not yet done (known next steps): shorter screen timeout, brightness setting
+in the settings screen, suspending the unused onboard IMU, and automatic
+light sleep (`esp_pm_configure` — requires rebuilding the Arduino static
+libs with `CONFIG_PM_ENABLE`, see esp32-arduino-lib-builder).
 
 ---
 
@@ -426,7 +467,7 @@ offline. All state persists via ESP32 Preferences (NVS flash storage).
 ## Hardware
 
 - **Board**: Waveshare ESP32-S3-Touch-LCD-1.28
-- **MCU**: ESP32-S3 (240 MHz, 320KB SRAM, 16MB Flash, 2MB PSRAM)
-- **Display**: 1.28" round TFT, 240×240, GC9A01, SPI (80 MHz)
+- **MCU**: ESP32-S3 (240 MHz capable; firmware runs 160 MHz awake / 80 MHz asleep, 320KB SRAM, 16MB Flash, 2MB PSRAM)
+- **Display**: 1.28" round TFT, 240×240, GC9A01, SPI (40 MHz)
 - **Touch**: CST816S capacitive, I2C (pins 6/7)
 - **Battery**: ADC pin 1 (GPIO1), 200K+100K voltage divider (3:1 ratio), ETA6096 charger
