@@ -23,11 +23,6 @@ static void my_disp_flush_dma(lv_display_t *disp, const lv_area_t *area, uint8_t
 #include <Preferences.h>
 #include <time.h>
 #include <math.h>
-#include <WiFi.h>
-#include <esp_wifi.h>
-#include <WebServer.h>
-#include <DNSServer.h>
-#include <ArduinoJson.h>
 
 #include "config/CST816S_pin_config.h"
 #include "ui/styles.h"
@@ -38,8 +33,14 @@ LV_FONT_DECLARE(font_alexandria_16);
 LV_FONT_DECLARE(font_alexandria_28);
 LV_FONT_DECLARE(font_alexandria_12);
 
-
-#include "web_dashboard.h"
+// ── Types relocated from web_dashboard.h (now removed) ───────
+struct Reminder {
+    int  hour, minute;
+    char label[32];
+    bool enabled;
+};
+#define BAT_ADC 1
+#define MAX_REMINDERS 10
 
 CST816S     touch(TOUCH_SDA, TOUCH_SCL, TOUCH_RST, TOUCH_IRQ);
 Preferences prefs;
@@ -55,47 +56,11 @@ lv_obj_t *reminder_mbox = NULL;
 
 static lv_timer_t *clock_timer_obj = NULL;
 static lv_timer_t *battery_timer_obj = NULL;
-static lv_timer_t *wifi_timer_obj = NULL;
-
-// ── WiFi state ──────────────────────────────────────────────
-enum WifiState { WIFI_IDLE, WIFI_CONNECTING, WIFI_CONNECTED, WIFI_AP_MODE, WIFI_OFFLINE };
-static WifiState wifi_state = WIFI_IDLE;
-static unsigned long wifi_connect_start = 0;
-static unsigned long ap_start_time = 0;
-static bool ap_timed_out = false;
-static bool wifi_modal_shown = false;
-static bool server_running = false;
-static bool wifi_bg_retry  = false;     // true = silent background retry, no modal on timeout
-static bool had_credentials = false;    // set when creds found/saved, avoids NVS re-reads
-static unsigned long last_conn_check    = 0;
-static unsigned long last_bg_retry      = 0;
-static unsigned long wifi_connected_at  = 0;
-static int conn_fail_count = 0;
-#define CONN_LOST_CHECK_MS   2000
-#define CONN_STABLE_GRACE_MS 8000
-#define BG_RETRY_INTERVAL_MS 30000
-
-// ── Two-phase AP startup ─────────────────────────────────────
-enum ApStartPhase {
-    AP_PHASE_IDLE,
-    AP_PHASE_RESETTING,  // waiting for WIFI_OFF → WIFI_STA to settle (non-blocking)
-    AP_PHASE_SCANNING,   // scan running in STA mode, waiting for results
-    AP_PHASE_STARTING,   // scan done, switching to AP + starting server
-};
-static ApStartPhase ap_phase = AP_PHASE_IDLE;
-static unsigned long ap_phase_start = 0;
 
 // ── Display sleep ───────────────────────────────────────────
 static lv_display_t *lv_disp = NULL;
 static bool display_sleeping = false;
 #define SLEEP_TIMEOUT_MS 30000
-String scan_ssids[30];
-int    scan_rssi[30];
-int    scan_enc[30];
-int    scan_count = 0;
-
-ServerHelper server(80);
-DNSServer  dnsServer;
 
 static int getBatteryPercent() {
     long sum = 0;
@@ -291,435 +256,6 @@ static void battery_timer_cb(lv_timer_t *timer) {
 }
 
 // ══════════════════════════════════════════════════════════════
-//  WiFi Management
-// ══════════════════════════════════════════════════════════════
-
-static bool ntp_pending = false;
-static int  ntp_tries   = 0;
-
-static void sync_ntp_start() {
-    configTime(3 * 3600, 0, "pool.ntp.org", "time.google.com", "time.cloudflare.com");
-    ntp_pending = true;
-    ntp_tries   = 0;
-    Serial.println("[NTP] Started");
-}
-
-static void sync_ntp_poll() {
-    if (!ntp_pending) return;
-
-    static unsigned long last_ntp_check = 0;
-    if (millis() - last_ntp_check < 1000) return;
-    last_ntp_check = millis();
-
-    struct tm t;
-    if (getLocalTime(&t, 0)) {
-        hour_   = t.tm_hour; minute_ = t.tm_min; second_ = t.tm_sec;
-        day_    = t.tm_mday; month_  = t.tm_mon + 1; year_ = t.tm_year + 1900;
-        saveTime();
-        update_home_clock();
-        ntp_pending = false;
-        ntp_tries   = 0;
-        Serial.println("[NTP] Time synced");
-    } else {
-        ntp_tries++;
-        if (ntp_tries % 5 == 0) Serial.printf("[NTP] Waiting... try %d\n", ntp_tries);
-        if (ntp_tries >= 15) {
-            Serial.println("[NTP] Restarting configTime...");
-            configTime(3 * 3600, 0, "pool.ntp.org", "time.google.com", "time.cloudflare.com");
-            ntp_tries = 0;
-        }
-    }
-}
-
-static void start_dashboard_server() {
-    if (server_running) return;
-    server.clearAllHandlers();
-    server.stop();
-    setup_dashboard_server(&server);
-    server_running = true;
-}
-
-static void stop_dashboard_server() {
-    if (server_running) {
-        server.stop();
-        server_running = false;
-    }
-}
-
-static bool has_saved_wifi_credentials() {
-    Serial.printf("[WiFi] Checking creds (mode before=%d)\n", (int)WiFi.getMode());
-    WiFi.mode(WIFI_STA);
-    wifi_config_t conf;
-    esp_err_t err = esp_wifi_get_config(WIFI_IF_STA, &conf);
-    String ssid = (err == ESP_OK) ? String((const char*)conf.sta.ssid) : String();
-    // Don't switch OFF — tearing down netstack here causes
-    // "netstack cb reg failed" + freezes on re-init.
-
-    bool has = (ssid.length() > 0);
-    Serial.printf("[WiFi] Stored SSID: \"%s\"  has=%d  err=%d\n",
-        ssid.c_str(), has, (int)err);
-    return has;
-}
-
-static void attempt_wifi_connect() {
-    Serial.println("[WiFi] attempt_wifi_connect() ENTER");
-
-    if (!has_saved_wifi_credentials()) {
-        Serial.println("[WiFi] No stored credentials — showing choice modal");
-        wifi_state = WIFI_IDLE;
-        extern void wifi_setup_show_choice(void);
-        push_modal(scr_wifi_setup);
-        wifi_setup_show_choice();
-        wifi_modal_shown = true;
-        return;
-    }
-
-    // Let netstack settle after mode change — avoids "netstack cb reg failed"
-    Serial.println("[WiFi] Settling netstack...");
-    delay(200);
-    Serial.println("[WiFi] Netstack settled, starting connect");
-
-    wifi_state         = WIFI_CONNECTING;
-    wifi_connect_start = millis();
-    wifi_modal_shown   = false;
-    had_credentials    = true;
-
-    WiFi.persistent(true);              // ensure credentials stay written to NVS
-    WiFi.mode(WIFI_STA);
-    WiFi.setAutoReconnect(true);
-    WiFi.begin();                       // use saved NVS credentials
-
-    // Start NTP query immediately — doesn't need WL_CONNECTED, works once
-    // the lower netif has an IP (saves ~8s vs waiting for connect callback)
-    sync_ntp_start();
-    Serial.println("[WiFi] WiFi.begin() called with saved credentials");
-}
-
-void wifi_setup_start_ap() {
-    if (server_running) { server.stop(); server_running = false; }
-    dnsServer.stop();
-
-    prefs.putBool("wifi_offline", false);
-
-    Serial.println("[WiFi] Phase 0 — reset to OFF, async...");
-    WiFi.mode(WIFI_OFF);
-    ap_phase = AP_PHASE_RESETTING;
-    ap_phase_start = millis();
-    scan_count = 0;
-}
-
-void wifi_setup_stop_ap() {
-    dnsServer.stop();
-    if (server_running) { server.stop(); server_running = false; }
-    WiFi.softAPdisconnect(true);
-    WiFi.mode(WIFI_OFF);
-    wifi_state = WIFI_IDLE;
-    ap_phase = AP_PHASE_IDLE;
-}
-
-void wifi_setup_cancel() {
-    wifi_setup_stop_ap();
-    wifi_state = WIFI_OFFLINE;
-    wifi_ready = false;
-    wifi_local_ip = "";
-    wifi_local_ssid = "";
-    prefs.putBool("wifi_offline", true);
-    update_wifi_status_display();
-}
-
-void erase_wifi_credentials() {
-    Serial.println("[WiFi] Erasing stored credentials...");
-
-    WiFi.persistent(true);             // must be ON for disconnect(true,true) to erase NVS
-    WiFi.mode(WIFI_STA);
-    WiFi.disconnect(true, true);       // first true = disconnect, second = erase NVS
-    delay(300);
-    WiFi.mode(WIFI_OFF);
-    // do NOT set persistent(false) — leave it ON for the next WiFi.begin()
-
-    prefs.putBool("wifi_offline", false);
-    wifi_state      = WIFI_IDLE;
-    wifi_ready      = false;
-    wifi_local_ip   = "";
-    wifi_local_ssid = "";
-    update_wifi_status_display();
-    Serial.println("[WiFi] Credentials erased");
-}
-
-void wifi_ap_save_credentials(String ssid, String pass) {
-    prefs.putBool("wifi_offline", false);
-
-    dnsServer.stop();
-    server.stop();
-    server_running = false;
-    ap_phase = AP_PHASE_IDLE;
-    WiFi.softAPdisconnect(true);
-
-    WiFi.persistent(true);              // ensure credentials written to NVS
-    WiFi.mode(WIFI_STA);
-    WiFi.begin(ssid.c_str(), pass.c_str());
-
-    wifi_state         = WIFI_CONNECTING;
-    wifi_connect_start = millis();
-    wifi_modal_shown   = true;
-    had_credentials    = true;
-    ap_timed_out       = false;
-
-    Serial.printf("[WiFi] Saving + connecting to \"%s\"\n", ssid.c_str());
-}
-
-void wifi_setup_show_qr() {
-    if (scr_qrcode) {
-        String url = "http://" + wifi_local_ip;
-        qrcode_set_url(url.c_str());
-    }
-}
-
-static void check_wifi_ap_timeout() {
-    if (wifi_state != WIFI_AP_MODE) return;
-    if (ap_timed_out) return;
-    if (millis() - ap_start_time > 180000) {
-        ap_timed_out = true;
-        wifi_setup_stop_ap();
-        wifi_setup_start_ap(); // restart AP + async scan for retry
-        if (lv_screen_active() == scr_wifi_setup) {
-            extern void wifi_setup_show_scanning(void);
-            wifi_setup_show_scanning();
-        }
-    }
-}
-
-// ── Async scan poll ─────────────────────────────────────────
-static void poll_wifi_scan() {
-    if (ap_phase != AP_PHASE_SCANNING) return;
-
-    int n = WiFi.scanComplete();
-    if (n == WIFI_SCAN_RUNNING) return;
-
-    ap_phase = AP_PHASE_IDLE;
-
-    if (n > 0) {
-        scan_count = n < 30 ? n : 30;
-        for (int i = 0; i < scan_count; i++) {
-            scan_ssids[i] = WiFi.SSID(i);
-            scan_rssi[i]  = WiFi.RSSI(i);
-            scan_enc[i]   = WiFi.encryptionType(i);
-            Serial.printf("[WiFi] scan[%d]: %s (%d dBm)\n", i,
-                scan_ssids[i].c_str(), scan_rssi[i]);
-        }
-        Serial.printf("[WiFi] Scan done: %d networks found.\n", scan_count);
-    } else {
-        scan_count = 0;
-        Serial.printf("[WiFi] Scan failed or empty (n=%d).\n", n);
-    }
-    WiFi.scanDelete();
-
-    // Phase 2 — switch to AP, start portal
-    Serial.println("[WiFi] Phase 2 — switching to AP...");
-    WiFi.mode(WIFI_AP);
-    delay(100);
-    WiFi.softAP("TasbeehWatch");
-
-    dnsServer.start(53, "*", WiFi.softAPIP());
-    server.clearAllHandlers();
-    server.stop();
-    setup_wifi_portal(&server);
-    server_running = true;
-
-    wifi_state    = WIFI_AP_MODE;
-    ap_start_time = millis();
-    ap_timed_out  = false;
-
-    Serial.printf("[WiFi] AP ready. IP: %s  Networks: %d\n",
-        WiFi.softAPIP().toString().c_str(), scan_count);
-
-    // Notify UI: AP is live
-    if (lv_screen_active() == scr_wifi_setup) {
-        extern void wifi_setup_set_ap_view(void);
-        wifi_setup_set_ap_view();
-    }
-}
-
-#define WIFI_CONNECT_TIMEOUT_MS  15000UL
-
-static void handle_wifi_connecting() {
-    if (wifi_state != WIFI_CONNECTING) return;
-
-    wl_status_t status = WiFi.status();
-
-    if (status == WL_CONNECTED) {
-        wifi_ready      = true;
-        wifi_local_ip   = WiFi.localIP().toString();
-        wifi_local_ssid = WiFi.SSID();
-        wifi_state      = WIFI_CONNECTED;
-        wifi_connected_at = millis();
-        last_conn_check   = millis();
-        conn_fail_count   = 0;
-        prefs.putBool("wifi_offline", false);
-        wifi_bg_retry   = false;
-
-        Serial.printf("[WiFi] Connected to \"%s\"  IP=%s  in %lu ms\n",
-            wifi_local_ssid.c_str(),
-            wifi_local_ip.c_str(),
-            millis() - wifi_connect_start);
-        Serial.printf("[WiFi] Guards reset: grace=%lu  fail_count=%d\n",
-            millis() - wifi_connected_at, conn_fail_count);
-
-        start_dashboard_server();
-        update_wifi_status_display();
-
-        if (lv_screen_active() == scr_wifi_setup) pop_modal();
-        return;
-    }
-
-    static unsigned long last_log = 0;
-    if (millis() - last_log > 3000) {
-        last_log = millis();
-        Serial.printf("[WiFi] status=%d  elapsed=%lu / %lu ms\n",
-            (int)status, millis() - wifi_connect_start, WIFI_CONNECT_TIMEOUT_MS);
-    }
-
-    if (millis() - wifi_connect_start < WIFI_CONNECT_TIMEOUT_MS) return;
-
-    Serial.printf("[WiFi] Timed out after %lu ms\n", WIFI_CONNECT_TIMEOUT_MS);
-
-    bool was_bg = wifi_bg_retry;
-    wifi_bg_retry = false;
-
-    WiFi.disconnect(false);       // lightweight — keep radio in STA, don't wipe config
-    wifi_state = WIFI_IDLE;
-
-    if (was_bg) {
-        Serial.println("[WiFi] Background retry timed out — will retry later");
-        return;
-    }
-
-    if (!wifi_modal_shown) {
-        Serial.println("[WiFi] Showing choice modal (boot timeout)");
-        extern void wifi_setup_show_choice(void);
-        push_modal(scr_wifi_setup);
-        wifi_setup_show_choice();
-        wifi_modal_shown = true;
-    } else {
-        Serial.println("[WiFi] Portal save timed out — restarting AP");
-        wifi_setup_start_ap();
-        if (lv_screen_active() == scr_wifi_setup) {
-            extern void wifi_setup_show_timeout(void);
-            wifi_setup_show_timeout();
-        }
-    }
-}
-
-// ── Background connection monitoring ──────────────────────────
-
-// Detect silent disconnect while we thought we were connected
-// Uses double-fault: requires 2 consecutive bad reads to confirm loss
-static void check_connection_lost() {
-    if (wifi_state != WIFI_CONNECTED) { conn_fail_count = 0; return; }
-
-    unsigned long grace_remaining = CONN_STABLE_GRACE_MS - (millis() - wifi_connected_at);
-    if (grace_remaining > CONN_STABLE_GRACE_MS) grace_remaining = 0;
-    if (grace_remaining > 0) {
-        static unsigned long last_grace_log = 0;
-        if (millis() - last_grace_log > 3000) {
-            last_grace_log = millis();
-            Serial.printf("[WiFi] Grace: %lu ms remaining\n", grace_remaining);
-        }
-        return;
-    }
-
-    if (millis() - last_conn_check < CONN_LOST_CHECK_MS) return;
-    last_conn_check = millis();
-
-    wl_status_t s = WiFi.status();
-    if (s == WL_CONNECTED) {
-        if (conn_fail_count > 0) {
-            Serial.printf("[WiFi] Disconnect glitch cleared (had %d failures)\n", conn_fail_count);
-            conn_fail_count = 0;
-        }
-        return;
-    }
-
-    conn_fail_count++;
-    Serial.printf("[WiFi] Status=%d  fail_count=%d/2\n", (int)s, conn_fail_count);
-    if (conn_fail_count < 2) return;
-    conn_fail_count = 0;
-
-    Serial.printf("[WiFi] Connection lost confirmed (status=%d) — disconnecting\n", (int)s);
-    wifi_ready      = false;
-    wifi_local_ip   = "";
-    wifi_local_ssid = "";
-    wifi_state      = WIFI_IDLE;
-    stop_dashboard_server();
-    update_wifi_status_display();
-}
-
-// Periodically retry when idle and credentials exist
-static void background_retry_connect() {
-    if (wifi_state == WIFI_CONNECTING || wifi_state == WIFI_AP_MODE) return;
-    if (wifi_state == WIFI_CONNECTED) return;
-    if (millis() - last_bg_retry < BG_RETRY_INTERVAL_MS) return;
-    last_bg_retry = millis();
-
-    // Only attempt if we have saved credentials (try begin — safe, returns immediately)
-    if (!had_credentials) {
-        Serial.println("[WiFi] bg retry skipped — no credentials");
-        return;
-    }
-
-    Serial.printf("[WiFi] Background retry — state=%d mode=%d\n",
-        (int)wifi_state, (int)WiFi.getMode());
-    wifi_state         = WIFI_CONNECTING;
-    wifi_connect_start = millis();
-    wifi_bg_retry      = true;
-
-    // Only switch mode if necessary — getMode() is cheap, mode() is expensive
-    if (WiFi.getMode() != WIFI_STA) {
-        WiFi.mode(WIFI_STA);
-    }
-    WiFi.begin();
-}
-
-// ── Async AP start sequence (non-blocking) ───────────────────
-static void poll_ap_start_sequence() {
-    if (ap_phase != AP_PHASE_RESETTING) return;
-    if (millis() - ap_phase_start < 200) return;   // let OFF settle, no blocking
-    WiFi.mode(WIFI_STA);
-    WiFi.disconnect();
-    WiFi.scanNetworks(true, false, true, 400);
-    ap_phase = AP_PHASE_SCANNING;
-    Serial.println("[WiFi] Async scan started.");
-}
-
-static void wifi_timer_cb(lv_timer_t *timer) {
-    static unsigned long last_state_log = 0;
-    if (millis() - last_state_log > 10000) {
-        last_state_log = millis();
-        Serial.printf("[WiFi] Timer: state=%d ready=%d connected_at=%lu\n",
-            (int)wifi_state, wifi_ready, wifi_connected_at);
-    }
-
-    handle_wifi_connecting();
-    sync_ntp_poll();
-    poll_ap_start_sequence();
-    poll_wifi_scan();
-    check_wifi_ap_timeout();
-    check_connection_lost();
-    background_retry_connect();
-
-    // Handle AP mode DNS + HTTP in timer (called every 100ms from loop indirectly)
-    if (wifi_state == WIFI_AP_MODE) {
-        dnsServer.processNextRequest();
-        server.handleClient();
-    }
-
-    // Handle dashboard server requests
-    if (wifi_state == WIFI_CONNECTED && server_running) {
-        server.handleClient();
-    }
-}
-
-// ══════════════════════════════════════════════════════════════
 //  Display sleep / wake
 // ══════════════════════════════════════════════════════════════
 
@@ -727,6 +263,7 @@ static void sleep_display() {
     digitalWrite(TFT_BL, !TFT_BACKLIGHT_ON);
     tft.writecommand(0x10);                     // TFT_SLPIN
     display_sleeping = true;
+    Serial.println("[SCREEN_OFF]");
 }
 
 static bool wake_pending = false;
@@ -872,17 +409,12 @@ void setup() {
 
     clock_timer_obj  = lv_timer_create(clock_timer_cb, 1000, NULL);
     battery_timer_obj = lv_timer_create(battery_timer_cb, 5000, NULL);
-    wifi_timer_obj    = lv_timer_create(wifi_timer_cb,   500, NULL);
     lv_timer_create(screen_sleep_cb, 1000, NULL);
 
     update_tasbeeh_display();
     update_istighfar_display();
 
     Serial.println("=== SETUP DONE ===\n");
-
-    // Always attempt WiFi connection (async, non-blocking)
-    // If it fails, the timeout handler will show the choice modal
-    attempt_wifi_connect();
 }
 
 void loop() {
@@ -891,6 +423,7 @@ void loop() {
         tft.writecommand(0x29);                 // TFT_DISPON
         digitalWrite(TFT_BL, TFT_BACKLIGHT_ON);
         lv_display_trigger_activity(lv_disp);
+        Serial.println("[SCREEN_ON]");
     }
     lv_timer_handler();
     delay(5);

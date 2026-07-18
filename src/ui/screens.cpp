@@ -6,15 +6,6 @@ lv_obj_t *scr_istighfar  = NULL;
 lv_obj_t *scr_tasbeeh    = NULL;
 lv_obj_t *scr_settings   = NULL;
 lv_obj_t *scr_timeedit   = NULL;
-lv_obj_t *scr_qrcode     = NULL;
-lv_obj_t *scr_wifi_setup = NULL;
-
-// WiFi globals
-bool   wifi_ready      = false;
-String wifi_local_ip   = "";
-String wifi_local_ssid = "";
-
-lv_obj_t *settings_ip_label = NULL;
 
 void screens_init(void) {
     create_screen_home();
@@ -22,8 +13,6 @@ void screens_init(void) {
     create_screen_tasbeeh();
     create_screen_settings();
     create_screen_timeedit();
-    create_screen_qrcode();
-    create_screen_wifi_setup();
 
     ring_screens[0] = scr_home;
     ring_screens[1] = scr_istighfar;
@@ -36,8 +25,6 @@ void screens_init(void) {
     Serial.printf("  [2] scr_tasbeeh   = %p\n", scr_tasbeeh);
     Serial.printf("      scr_settings  = %p\n", scr_settings);
     Serial.printf("      scr_timeedit  = %p\n", scr_timeedit);
-    Serial.printf("      scr_qrcode    = %p\n", scr_qrcode);
-    Serial.printf("      scr_wifi_setup= %p\n", scr_wifi_setup);
 #endif
 
     for (int i = 0; i < RING_LEN; i++) {
@@ -59,11 +46,11 @@ void screens_init(void) {
 #endif
     }
 
-    lv_obj_t *modal_screens[] = { scr_settings, scr_timeedit, scr_qrcode, scr_wifi_setup };
-    for (int m = 0; m < 4; m++) {
+    lv_obj_t *modal_screens[] = { scr_settings, scr_timeedit };
+    for (int m = 0; m < 2; m++) {
         lv_obj_t *ms = modal_screens[m];
         lv_obj_add_event_cb(ms, gesture_modal_cb, LV_EVENT_GESTURE, NULL);
-        if (ms != scr_timeedit && ms != scr_wifi_setup) {
+        if (ms != scr_timeedit) {
             if (!lv_obj_has_flag(ms, LV_OBJ_FLAG_CLICKABLE))
                 lv_obj_add_flag(ms, LV_OBJ_FLAG_CLICKABLE);
             lv_obj_add_event_cb(ms, modal_bg_tap_cb, LV_EVENT_CLICKED, NULL);

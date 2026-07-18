@@ -1,2 +1,7 @@
 .pio
 .vscode
+# power profiler venv + logs
+scripts/power_profiler/.venv/
+scripts/power_profiler/logs/
+scripts/power_profiler/__pycache__/
+

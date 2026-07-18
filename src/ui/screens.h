@@ -18,8 +18,6 @@ extern lv_obj_t *scr_tasbeeh;
 // Modal screens
 extern lv_obj_t *scr_settings;
 extern lv_obj_t *scr_timeedit;
-extern lv_obj_t *scr_qrcode;
-extern lv_obj_t *scr_wifi_setup;
 
 // ── Home / Clock screen widgets ───────────────────────────────
 extern lv_obj_t *home_day_label;
@@ -31,11 +29,6 @@ extern lv_obj_t *home_sec_arc;
 extern lv_obj_t *home_ampm_label;
 extern lv_obj_t *home_sec_label;
 extern int current_ring_idx;
-
-// ── WiFi status (global, updated by main.cpp) ─────────────────
-extern bool   wifi_ready;
-extern String wifi_local_ip;
-extern String wifi_local_ssid;
 
 // ── Istighfar screen widgets ──────────────────────────────────
 extern lv_obj_t *istighfar_arc;
@@ -53,14 +46,6 @@ extern lv_obj_t *tasbeeh_dots[3];
 extern uint32_t  tasbeehCount;
 extern uint32_t  totalTasbeeh;
 extern int       tasbeeh_phrase_idx;
-
-// ── Settings widgets ──────────────────────────────────────────
-extern lv_obj_t *settings_status_label;
-extern lv_obj_t *settings_ip_label;
-extern lv_obj_t *settings_ssid_label;
-extern lv_obj_t *settings_wifi_btn;
-extern lv_obj_t *settings_qr_card;
-extern lv_obj_t *settings_dashboard_btn;
 
 // ── TimeEdit ──────────────────────────────────────────────────
 extern lv_obj_t *te_hour_label;
@@ -88,16 +73,11 @@ void create_screen_istighfar(void);
 void create_screen_tasbeeh(void);
 void create_screen_settings(void);
 void create_screen_timeedit(void);
-void create_screen_qrcode(void);
-void qrcode_set_url(const char *url);
-void create_screen_wifi_setup(void);
-void wifi_setup_show_scanning(void);
 
 // ── Update helpers (called from main timer) ───────────────────
 void update_home_clock(void);
 void update_istighfar_display(void);
 void update_tasbeeh_display(void);
-void update_wifi_status_display(void);
 
 // ── Shared structs ────────────────────────────────────────────
 typedef struct {

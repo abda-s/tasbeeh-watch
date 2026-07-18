@@ -1,0 +1,36 @@
+# Marker tag -> role mapping for the power profiler.
+# The ESP32 prints tagged lines on its debug UART, e.g.:
+#     Serial.println("[SLEEP] ds 10s");
+#     Serial.println("[WAKE] timer");
+#     Serial.println("[SCREEN_ON]");
+#     Serial.println("[SCREEN_OFF]");
+# Any line starting with [TAG] (case-insensitive) is matched against this
+# file. Unknown [TAG]s and untagged lines stay plain point markers.
+#
+# Roles:
+#   sleep       closes the previous state, opens a SLEEP band (cycle start)
+#   wake        closes the previous state, opens an ACTIVE band
+#   screen_on   opens a SCREEN band (screen-on life estimate)
+#   screen_off  closes the SCREEN band
+#   active      opens a named sub-band (e.g. WIFI) until the next tag
+#   point       plain vertical marker, no band
+
+[[tag]]
+text = "SLEEP"
+role = "sleep"
+
+[[tag]]
+text = "WAKE"
+role = "wake"
+
+[[tag]]
+text = "SCREEN_ON"
+role = "screen_on"
+
+[[tag]]
+text = "SCREEN_OFF"
+role = "screen_off"
+
+[[tag]]
+text = "WIFI"
+role = "active"
