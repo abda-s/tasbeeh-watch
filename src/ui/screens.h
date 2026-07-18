@@ -79,6 +79,10 @@ void update_home_clock(void);
 void update_istighfar_display(void);
 void update_tasbeeh_display(void);
 
+// ── Home screen swipe-hint animation (paused during display sleep) ────
+void pause_home_swipe_hint(void);
+void resume_home_swipe_hint(void);
+
 // ── Shared structs ────────────────────────────────────────────
 typedef struct {
     lv_obj_t  *arc;

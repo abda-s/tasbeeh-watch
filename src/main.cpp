@@ -62,10 +62,26 @@ static lv_display_t *lv_disp = NULL;
 static bool display_sleeping = false;
 #define SLEEP_TIMEOUT_MS 30000
 
+// While asleep, poll/redraw at a fraction of the normal rate instead of
+// stopping lv_timer_handler() entirely — clock tick, reminder check, and
+// touch-wake detection all still run, just ~40x less often.
+#define SLEEP_TICK_MS 200
+#define AWAKE_CPU_MHZ 240
+#define SLEEP_CPU_MHZ 80
+
+// Backlight PWM (replaces plain digitalWrite on/off)
+#define BL_PWM_FREQ_HZ 5000
+#define BL_PWM_RES_BITS 8
+// #define BL_DUTY_ON  180   // ~70% — dimmer, less LED current
+// #define BL_DUTY_ON  128   // ~50% — dimmer, less LED current
+#define BL_DUTY_ON  70   // ~27% — measured ~52mA avg screen-on (was 85mA at 100%)
+
+#define BL_DUTY_OFF 0
+
 static int getBatteryPercent() {
     long sum = 0;
-    for (int i = 0; i < 16; i++) { sum += analogReadMilliVolts(BAT_ADC); delay(1); }
-    float v_adc = sum / 16.0f / 1000.0f;
+    for (int i = 0; i < 8; i++) { sum += analogReadMilliVolts(BAT_ADC); delay(1); }
+    float v_adc = sum / 8.0f / 1000.0f;
     float v_bat = v_adc * 3.0f;
     int pct = (int)((v_bat - 3.5f) / (4.15f - 3.5f) * 100.0f);
     return constrain(pct, 0, 100);
@@ -259,10 +275,28 @@ static void battery_timer_cb(lv_timer_t *timer) {
 //  Display sleep / wake
 // ══════════════════════════════════════════════════════════════
 
+// touch.sleep()'s reset pulse (RST low→high, inside the CST816S library)
+// glitches the chip's IRQ line. The library's own interrupt handler is
+// RISING-mode and stays attached forever, so it catches that glitch and
+// looks exactly like a real touch. Detach it around the reset, then arm
+// this minimal ISR instead — it only needs to notice the real wake touch,
+// not read any touch data.
+static volatile bool touch_wake_flag = false;
+static void IRAM_ATTR touch_wake_isr() { touch_wake_flag = true; }
+
 static void sleep_display() {
-    digitalWrite(TFT_BL, !TFT_BACKLIGHT_ON);
+    ledcWrite(TFT_BL, BL_DUTY_OFF);
     tft.writecommand(0x10);                     // TFT_SLPIN
     display_sleeping = true;
+    pause_home_swipe_hint();                    // stop the endless swipe-hint anim (any screen)
+
+    detachInterrupt(TOUCH_IRQ);                  // don't catch sleep()'s own reset glitch below
+    touch.sleep();                               // reset pulse + standby register write
+    touch.available();                           // drain any stale flag set by that reset glitch
+    touch_wake_flag = false;
+    attachInterrupt(TOUCH_IRQ, touch_wake_isr, RISING); // armed for the real wake touch
+
+    setCpuFrequencyMhz(SLEEP_CPU_MHZ);
     Serial.println("[SCREEN_OFF]");
 }
 
@@ -270,8 +304,14 @@ static bool wake_pending = false;
 static uint32_t wake_time = 0;
 
 static void wake_display() {
+    detachInterrupt(TOUCH_IRQ);
+    touch.begin();                               // re-init touch chip + reattach its real ISR
+    touch_wake_flag = false;
+
+    setCpuFrequencyMhz(AWAKE_CPU_MHZ);
     tft.writecommand(0x11);                     // TFT_SLPOUT
     display_sleeping = false;                   // mark awake immediately so touch works
+    resume_home_swipe_hint();
     wake_pending = true;
     wake_time = millis();                       // defer DISPON + backlight by 120ms
 }
@@ -361,6 +401,8 @@ void setup() {
     tft.begin();
     tft.setRotation(TFT_ROTATION);
     tft.fillScreen(TFT_BLACK);
+    ledcAttach(TFT_BL, BL_PWM_FREQ_HZ, BL_PWM_RES_BITS);
+    ledcWrite(TFT_BL, BL_DUTY_ON);
     disp = lv_display_create(TFT_HOR_RES, TFT_VER_RES);
     lv_display_set_flush_cb(disp, my_disp_flush_dma);
     lv_display_set_rotation(disp, TFT_ROTATION);
@@ -421,10 +463,31 @@ void loop() {
     if (wake_pending && millis() - wake_time >= 120) {
         wake_pending = false;
         tft.writecommand(0x29);                 // TFT_DISPON
-        digitalWrite(TFT_BL, TFT_BACKLIGHT_ON);
+        ledcWrite(TFT_BL, BL_DUTY_ON);
         lv_display_trigger_activity(lv_disp);
         Serial.println("[SCREEN_ON]");
     }
-    lv_timer_handler();
-    delay(5);
+
+    if (display_sleeping) {
+        if (touch_wake_flag) {
+            touch_wake_flag = false;
+            wake_display();
+        } else {
+            // Screen is off: service LVGL (clock tick, reminder check) at a
+            // fraction of the normal rate instead of every 5ms — no
+            // animations are running (paused in sleep_display()) so nothing
+            // is lost by not redrawing more often than this. Wake detection
+            // itself is handled above via touch_wake_flag, not by LVGL.
+            static uint32_t last_sleep_tick = 0;
+            uint32_t now = millis();
+            if (now - last_sleep_tick >= SLEEP_TICK_MS) {
+                last_sleep_tick = now;
+                lv_timer_handler();
+            }
+        }
+        delay(20);
+    } else {
+        lv_timer_handler();
+        delay(5);
+    }
 }

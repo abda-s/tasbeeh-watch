@@ -51,8 +51,41 @@ static int day_of_week(int d, int m, int y) {
     return (y + y/4 - y/100 + y/400 + t[m-1] + d) % 7;
 }
 
+static lv_obj_t *arrow_l = NULL;
+static lv_obj_t *arrow_r = NULL;
+
 static void arrow_sway_cb(void *obj, int32_t v) {
     lv_obj_set_style_translate_x((lv_obj_t *)obj, v, 0);
+}
+
+// Swipe-hint animation runs forever while active — must be paused whenever
+// the display sleeps (any screen), otherwise LVGL keeps invalidating +
+// flushing pixels over SPI to a panel that's supposedly off, forever.
+void resume_home_swipe_hint(void) {
+    if (!arrow_l || !arrow_r) return;
+
+    lv_anim_t al, ar;
+    lv_anim_init(&al);
+    lv_anim_set_var(&al, arrow_l);
+    lv_anim_set_exec_cb(&al, arrow_sway_cb);
+    lv_anim_set_values(&al, -3, 3);
+    lv_anim_set_duration(&al, 1500);
+    lv_anim_set_playback_duration(&al, 1500);
+    lv_anim_set_repeat_count(&al, LV_ANIM_REPEAT_INFINITE);
+    lv_anim_start(&al);
+
+    lv_anim_init(&ar);
+    lv_anim_set_var(&ar, arrow_r);
+    lv_anim_set_exec_cb(&ar, arrow_sway_cb);
+    lv_anim_set_values(&ar, 3, -3);
+    lv_anim_set_duration(&ar, 1500);
+    lv_anim_set_playback_duration(&ar, 1500);
+    lv_anim_set_repeat_count(&ar, LV_ANIM_REPEAT_INFINITE);
+    lv_anim_start(&ar);
+}
+
+void pause_home_swipe_hint(void) {
+    lv_anim_delete(NULL, arrow_sway_cb);
 }
 
 static void gear_click_cb(lv_event_t *e) {
@@ -172,38 +205,21 @@ void create_screen_home(void)
     lv_obj_align(home_bat_label, LV_ALIGN_TOP_LEFT, 35, 56);
 
     // ── Swipe arrows — gently hovering ───────────────────
-    lv_obj_t *arrow_l = lv_label_create(scr_home);
+    arrow_l = lv_label_create(scr_home);
     lv_obj_set_style_text_font(arrow_l, &lv_font_montserrat_14, 0);
     lv_obj_set_style_text_color(arrow_l, color_gold, 0);
     lv_obj_set_style_text_opa(arrow_l, LV_OPA_50, 0);
     lv_label_set_text(arrow_l, LV_SYMBOL_LEFT);
     lv_obj_align(arrow_l, LV_ALIGN_LEFT_MID, 30, 0);
 
-    lv_obj_t *arrow_r = lv_label_create(scr_home);
+    arrow_r = lv_label_create(scr_home);
     lv_obj_set_style_text_font(arrow_r, &lv_font_montserrat_14, 0);
     lv_obj_set_style_text_color(arrow_r, color_gold, 0);
     lv_obj_set_style_text_opa(arrow_r, LV_OPA_50, 0);
     lv_label_set_text(arrow_r, LV_SYMBOL_RIGHT);
     lv_obj_align(arrow_r, LV_ALIGN_RIGHT_MID, -30, 0);
 
-    lv_anim_t al, ar;
-    lv_anim_init(&al);
-    lv_anim_set_var(&al, arrow_l);
-    lv_anim_set_exec_cb(&al, arrow_sway_cb);
-    lv_anim_set_values(&al, -3, 3);
-    lv_anim_set_duration(&al, 1500);
-    lv_anim_set_playback_duration(&al, 1500);
-    lv_anim_set_repeat_count(&al, LV_ANIM_REPEAT_INFINITE);
-    lv_anim_start(&al);
-
-    lv_anim_init(&ar);
-    lv_anim_set_var(&ar, arrow_r);
-    lv_anim_set_exec_cb(&ar, arrow_sway_cb);
-    lv_anim_set_values(&ar, 3, -3);
-    lv_anim_set_duration(&ar, 1500);
-    lv_anim_set_playback_duration(&ar, 1500);
-    lv_anim_set_repeat_count(&ar, LV_ANIM_REPEAT_INFINITE);
-    lv_anim_start(&ar);
+    resume_home_swipe_hint();
 
     // ── Gear icon (52×52 touch area) ─────────────────────
     lv_obj_t *gear_btn = lv_btn_create(scr_home);
