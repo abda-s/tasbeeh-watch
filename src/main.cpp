@@ -318,10 +318,14 @@ static void sleep_display() {
     touch.available();                           // drain any stale flag set by that reset glitch
 
     // Hardware wake sources for esp_light_sleep_start() — no software ISR
-    // needed, the CPU wakes directly from the halted state. IRQ idles LOW
-    // and pulses HIGH on touch (matches the RISING attachInterrupt used
-    // while awake), so wake on HIGH level.
-    gpio_wakeup_enable((gpio_num_t)TOUCH_IRQ, GPIO_INTR_HIGH_LEVEL);
+    // needed, the CPU wakes directly from the halted state.
+    //
+    // Measured on real hardware: with GPIO_INTR_HIGH_LEVEL, every sleep
+    // attempt was rejected instantly (ESP_ERR_SLEEP_REJECT — "wakeup source
+    // set before the sleep request"), meaning TOUCH_IRQ actually idles HIGH,
+    // opposite of what the RISING attachInterrupt convention implied. Wake
+    // on LOW level instead.
+    gpio_wakeup_enable((gpio_num_t)TOUCH_IRQ, GPIO_INTR_LOW_LEVEL);
     esp_sleep_enable_gpio_wakeup();
     esp_sleep_enable_timer_wakeup(SLEEP_WAKE_INTERVAL_US);
 
@@ -503,8 +507,14 @@ void loop() {
     }
 
     if (display_sleeping) {
-        esp_light_sleep_start();                 // blocks here until GPIO or timer wakeup
+        Serial.flush();   // finish sending any pending bytes before UART's clock gates —
+                           // otherwise a mid-transmission string gets cut off and its
+                           // remainder doesn't print until the next wake, garbling the log
+        esp_err_t sleep_err = esp_light_sleep_start(); // blocks here until GPIO or timer wakeup
         esp_sleep_wakeup_cause_t cause = esp_sleep_get_wakeup_cause();
+        if (sleep_err != ESP_OK) {
+            Serial.printf("[SLEEP] rejected: %s\n", esp_err_to_name(sleep_err));
+        }
         Serial.printf("[WAKE] cause=%s\n", cause == ESP_SLEEP_WAKEUP_GPIO ? "GPIO" : "TIMER");
 
         updateClock();
