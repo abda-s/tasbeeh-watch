@@ -312,11 +312,37 @@ Current: **RAM 60.4%** (198KB / 328KB), **Flash ~24%** (753KB / 3.1MB).
 
 ---
 
-## Power Management (V1 → V1.3)
+## Power Management (V1 → V1.31)
 
 Measured with the dual-port INA226 profiler in `scripts/power_profiler/`
 (fuses current samples with firmware `[SCREEN_ON]` / `[SCREEN_OFF]` / `[WAKE]`
 serial markers on one timeline).
+
+### Real battery capacity: ~48 mAh, not the advertised 100 mAh
+
+Every test below except the last three ran until the battery hit cutoff, so
+each `Duration × Avg I` back-calculates the battery's actual usable capacity
+(`Capacity (mAh) = Current (mA) × Duration (min) / 60`). Doing that for all
+10 independently-run tests — different firmware versions, different states,
+different current draws — gives:
+
+| Test | Calculated capacity |
+|---|---|
+| V1 screen off (51 mA × 56 min) | 47.60 mAh |
+| V1 screen on (90 mA × 32 min) | 48.00 mAh |
+| V1.1 screen off (35 mA × 82 min) | 47.83 mAh |
+| V1.1 screen on (85 mA × 34 min) | 48.17 mAh |
+| V1.2 screen off (29 mA × 98 min) | 47.37 mAh |
+| V1.2 70% (70 mA × 41 min) | 47.83 mAh |
+| V1.2 50% (62 mA × 46 min) | 47.53 mAh |
+| V1.2 27% (54 mA × 53 min) | 47.70 mAh |
+| V1.21 screen off (28 mA × 102 min) | 47.60 mAh |
+| V1.21 screen on (48 mA × 60 min) | 48.00 mAh |
+
+All ten land within 47.4-48.2 mAh (average **47.76 mAh**) — that's every
+test independently agreeing, not a one-off calculation, so this is a solid
+result: **the battery is actually ~48 mAh, roughly half of the ~100 mAh the
+manufacturer/listing states.**
 
 | Version | Change | State | Duration | Avg I |
 |---|---|---|---|---|
@@ -330,10 +356,13 @@ serial markers on one timeline).
 | V1.2 | same, brightness 27% (PWM 70) | Screen on | ~53 min | 54 mA |
 | V1.21 | Static swipe arrows, CPU 240→160MHz awake, adaptive loop idle | Screen off | 102 min | 28 mA |
 | V1.21 | same | Screen on | ~60 min | 48 mA |
-| V1.22 | CPU 160→80MHz awake | Screen on | — | 43.4 mA |
+| V1.22 | CPU 160→80MHz awake | Screen on | ~66 min *(calc, 48mAh÷43.4mA)* | 43.4 mA |
 | V1.23 | Bug fix: CPU now starts at 80MHz at boot (was defaulting to 240MHz until the first sleep/wake cycle) | — | — | — |
-| V1.3 | Real light sleep (`esp_light_sleep_start`), GPIO wake polarity fix | **Screen off (asleep)** | — | **~5 mA** |
-| V1.31 | Wake-timer interval 2s→60s, onboard IMU powered down | **Screen off (asleep)** | — | **~4.8 mA** |
+| V1.3 | Real light sleep (`esp_light_sleep_start`), GPIO wake polarity fix | **Screen off (asleep)** | ~576 min / 9.6h *(calc, 48mAh÷5mA)* | **~5 mA** |
+| V1.31 | Wake-timer interval 2s→60s, onboard IMU powered down | **Screen off (asleep)** | ~600 min / 10h *(calc, 48mAh÷4.8mA)* | **~4.8 mA** |
+
+*(V1.22/V1.3/V1.31 durations are calculated from the 48 mAh figure above, not
+measured directly — those tests weren't run to full depletion.)*
 
 What each version changed:
 
