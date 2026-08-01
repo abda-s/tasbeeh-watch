@@ -23,6 +23,8 @@ static void my_disp_flush_dma(lv_display_t *disp, const lv_area_t *area, uint8_t
 #include <Preferences.h>
 #include <time.h>
 #include <math.h>
+#include "esp_sleep.h"
+#include "driver/gpio.h"
 
 #include "config/CST816S_pin_config.h"
 #include "ui/styles.h"
@@ -62,14 +64,16 @@ static lv_display_t *lv_disp = NULL;
 static bool display_sleeping = false;
 #define SLEEP_TIMEOUT_MS 30000
 
-// While asleep, poll/redraw at a fraction of the normal rate instead of
-// stopping lv_timer_handler() entirely — clock tick, reminder check, and
-// touch-wake detection all still run, just ~40x less often.
-#define SLEEP_TICK_MS 200
 // #define AWAKE_CPU_MHZ 240
 // #define AWAKE_CPU_MHZ 160  // UI is light (partial redraws over 40MHz SPI+DMA); 240 not needed
 #define AWAKE_CPU_MHZ 80  // testing: how low can awake CPU go before UI feels laggy
-#define SLEEP_CPU_MHZ 80
+
+// Real light sleep clock-gates the CPU directly, so it doesn't matter what
+// frequency was set beforehand. Wake at least this often so ESP-IDF's
+// automatic RC-oscillator-vs-main-crystal RTC recalibration stays fresh
+// (bounds temperature drift) and so a touch has a timer backstop in case
+// the GPIO-level wake (see sleep_display()) doesn't latch it.
+#define SLEEP_WAKE_INTERVAL_US (2ULL * 1000 * 1000)
 
 // Backlight PWM (replaces plain digitalWrite on/off)
 #define BL_PWM_FREQ_HZ 5000
@@ -302,12 +306,8 @@ static void battery_timer_cb(lv_timer_t *timer) {
 // touch.sleep()'s reset pulse (RST low→high, inside the CST816S library)
 // glitches the chip's IRQ line. The library's own interrupt handler is
 // RISING-mode and stays attached forever, so it catches that glitch and
-// looks exactly like a real touch. Detach it around the reset, then arm
-// this minimal ISR instead — it only needs to notice the real wake touch,
-// not read any touch data.
-static volatile bool touch_wake_flag = false;
-static void IRAM_ATTR touch_wake_isr() { touch_wake_flag = true; }
-
+// looks exactly like a real touch. Detach it around the reset so it isn't
+// mistaken for a real one.
 static void sleep_display() {
     ledcWrite(TFT_BL, BL_DUTY_OFF);
     tft.writecommand(0x10);                     // TFT_SLPIN
@@ -316,10 +316,15 @@ static void sleep_display() {
     detachInterrupt(TOUCH_IRQ);                  // don't catch sleep()'s own reset glitch below
     touch.sleep();                               // reset pulse + standby register write
     touch.available();                           // drain any stale flag set by that reset glitch
-    touch_wake_flag = false;
-    attachInterrupt(TOUCH_IRQ, touch_wake_isr, RISING); // armed for the real wake touch
 
-    setCpuFrequencyMhz(SLEEP_CPU_MHZ);
+    // Hardware wake sources for esp_light_sleep_start() — no software ISR
+    // needed, the CPU wakes directly from the halted state. IRQ idles LOW
+    // and pulses HIGH on touch (matches the RISING attachInterrupt used
+    // while awake), so wake on HIGH level.
+    gpio_wakeup_enable((gpio_num_t)TOUCH_IRQ, GPIO_INTR_HIGH_LEVEL);
+    esp_sleep_enable_gpio_wakeup();
+    esp_sleep_enable_timer_wakeup(SLEEP_WAKE_INTERVAL_US);
+
     Serial.println("[SCREEN_OFF]");
 }
 
@@ -329,7 +334,6 @@ static uint32_t wake_time = 0;
 static void wake_display() {
     detachInterrupt(TOUCH_IRQ);
     touch.begin();                               // re-init touch chip + reattach its real ISR
-    touch_wake_flag = false;
 
     setCpuFrequencyMhz(AWAKE_CPU_MHZ);
     tft.writecommand(0x11);                     // TFT_SLPOUT
@@ -499,23 +503,15 @@ void loop() {
     }
 
     if (display_sleeping) {
-        if (touch_wake_flag) {
-            touch_wake_flag = false;
-            wake_display();
-        } else {
-            // Screen is off: service LVGL (clock tick, reminder check) at a
-            // fraction of the normal rate instead of every 5ms — no
-            // animations are running (paused in sleep_display()) so nothing
-            // is lost by not redrawing more often than this. Wake detection
-            // itself is handled above via touch_wake_flag, not by LVGL.
-            static uint32_t last_sleep_tick = 0;
-            uint32_t now = millis();
-            if (now - last_sleep_tick >= SLEEP_TICK_MS) {
-                last_sleep_tick = now;
-                lv_timer_handler();
-            }
-        }
-        delay(20);
+        esp_light_sleep_start();                 // blocks here until GPIO or timer wakeup
+        esp_sleep_wakeup_cause_t cause = esp_sleep_get_wakeup_cause();
+        Serial.printf("[WAKE] cause=%s\n", cause == ESP_SLEEP_WAKEUP_GPIO ? "GPIO" : "TIMER");
+
+        updateClock();
+        checkReminders();                        // may itself call wake_display() if a reminder is due
+        if (second_ == 0) saveTime();
+
+        if (cause == ESP_SLEEP_WAKEUP_GPIO && display_sleeping) wake_display();
     } else {
         // Adaptive idle: lv_timer_handler() returns the ms until the next
         // scheduled LVGL timer — sleep exactly that long instead of a fixed
