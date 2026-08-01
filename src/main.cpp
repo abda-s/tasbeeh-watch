@@ -67,7 +67,8 @@ static bool display_sleeping = false;
 // touch-wake detection all still run, just ~40x less often.
 #define SLEEP_TICK_MS 200
 // #define AWAKE_CPU_MHZ 240
-#define AWAKE_CPU_MHZ 160  // UI is light (partial redraws over 40MHz SPI+DMA); 240 not needed
+// #define AWAKE_CPU_MHZ 160  // UI is light (partial redraws over 40MHz SPI+DMA); 240 not needed
+#define AWAKE_CPU_MHZ 80  // testing: how low can awake CPU go before UI feels laggy
 #define SLEEP_CPU_MHZ 80
 
 // Backlight PWM (replaces plain digitalWrite on/off)
