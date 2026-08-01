@@ -90,6 +90,7 @@ static void timeedit_save_cb(lv_event_t *e) {
     prefs.putInt("day", day_);
     prefs.putInt("month", month_);
     prefs.putInt("year", year_);
+    resetClockTick();
     update_home_clock();
     pop_modal();
 }

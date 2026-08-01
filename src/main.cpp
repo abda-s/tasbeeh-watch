@@ -89,11 +89,33 @@ static int getBatteryPercent() {
     return constrain(pct, 0, 100);
 }
 
+// Advances the clock by however many whole seconds actually elapsed since
+// the last call (millis()-based, not a flat +1) — so a late or skipped
+// clock_timer_cb (e.g. throttled sleep polling, or a future real sleep
+// implementation that halts the CPU) doesn't silently lose time. Any
+// leftover sub-second remainder is kept in last_clock_ms rather than
+// discarded, so rounding doesn't accumulate into drift either.
+static uint32_t last_clock_ms = 0;
+
+// Called whenever hour_/minute_/second_ are set directly (e.g. from the
+// TimeEdit screen) so the next updateClock() measures elapsed time from
+// the moment of the edit, instead of adding on top of however long the
+// user spent on the TimeEdit screen itself.
+void resetClockTick() { last_clock_ms = millis(); }
+
 static void updateClock() {
-    second_++;
-    if (second_ >= 60) { second_ = 0; minute_++; }
-    if (minute_ >= 60) { minute_ = 0; hour_++;   }
-    if (hour_   >= 24) { hour_   = 0; day_++;    }
+    uint32_t now = millis();
+    uint32_t elapsed_ms = now - last_clock_ms;   // unsigned subtraction wraps correctly across millis() overflow
+    int elapsed_s = elapsed_ms / 1000;
+    if (elapsed_s <= 0) return;
+    last_clock_ms += (uint32_t)elapsed_s * 1000;
+
+    while (elapsed_s-- > 0) {
+        second_++;
+        if (second_ >= 60) { second_ = 0; minute_++; }
+        if (minute_ >= 60) { minute_ = 0; hour_++;   }
+        if (hour_   >= 24) { hour_   = 0; day_++;    }
+    }
 }
 
 void saveTime() {
@@ -370,6 +392,8 @@ void setup() {
     delay(500);
     Serial.println("\n\n=== BOOT START ===");
 
+    setCpuFrequencyMhz(AWAKE_CPU_MHZ);  // otherwise boot stays at the default clock until the first sleep/wake cycle
+
     Serial.println("[1] touch.begin...");
     touch.begin();
     Serial.println("[1] OK");
@@ -386,6 +410,7 @@ void setup() {
     totalIstighfar    = prefs.getUInt("totalisteghfar", 0);
     loadReminders();
     loadTime();
+    last_clock_ms = millis();
     prefs.putInt("popup_idx", -1);  // clear any stale popup from previous crash
     Serial.println("[2] OK");
 

@@ -56,6 +56,7 @@ extern lv_obj_t *te_year_label;
 extern int timeedit_hour, timeedit_min, timeedit_day, timeedit_month, timeedit_year, timeedit_field;
 extern int timeedit_ampm;
 void update_timeedit_highlight(void);
+void resetClockTick(void);
 
 // ── Navigation helpers ────────────────────────────────────────
 void navigate_to_ring(int idx);
