@@ -62,7 +62,7 @@ static lv_timer_t *battery_timer_obj = NULL;
 // ── Display sleep ───────────────────────────────────────────
 static lv_display_t *lv_disp = NULL;
 static bool display_sleeping = false;
-#define SLEEP_TIMEOUT_MS 30000
+#define SLEEP_TIMEOUT_MS 15000
 
 // #define AWAKE_CPU_MHZ 240
 // #define AWAKE_CPU_MHZ 160  // UI is light (partial redraws over 40MHz SPI+DMA); 240 not needed

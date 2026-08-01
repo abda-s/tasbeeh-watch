@@ -312,42 +312,79 @@ Current: **RAM 60.4%** (198KB / 328KB), **Flash ~24%** (753KB / 3.1MB).
 
 ---
 
-## Power Management (V1.2 / V1.21)
+## Power Management (V1 → V1.3)
 
 Measured with the dual-port INA226 profiler in `scripts/power_profiler/`
-(fuses current samples with firmware `[SCREEN_ON]` / `[SCREEN_OFF]` serial
-markers on one timeline).
+(fuses current samples with firmware `[SCREEN_ON]` / `[SCREEN_OFF]` / `[WAKE]`
+serial markers on one timeline).
 
-| State | V1 (WiFi) | V1.1 (no WiFi) | V1.21 |
-|---|---|---|---|
-| Screen on | 90 mA | 85 mA | **~50 mA** |
-| Screen off (idle) | 51 mA | 35 mA | **~30 mA** |
+| Version | Change | State | Duration | Avg I |
+|---|---|---|---|---|
+| V1 | Baseline, WiFi connected | Screen off | 56 min | 51 mA |
+| V1 | Baseline, WiFi connected | Screen on | ~32 min | 90 mA |
+| V1.1 | WiFi removed entirely | Screen off | ~82 min | 35 mA |
+| V1.1 | WiFi removed entirely | Screen on | ~34 min | 85 mA |
+| V1.2 | CPU 240→80MHz during sleep, touch standby, animation pause, PWM backlight | Screen off | ~98 min | 29 mA |
+| V1.2 | same, brightness 70% | Screen on | ~41 min | 70 mA |
+| V1.2 | same, brightness 50% (PWM 120) | Screen on | ~46 min | 62 mA |
+| V1.2 | same, brightness 27% (PWM 70) | Screen on | ~53 min | 54 mA |
+| V1.21 | Static swipe arrows, CPU 240→160MHz awake, adaptive loop idle | Screen off | 102 min | 28 mA |
+| V1.21 | same | Screen on | ~60 min | 48 mA |
+| V1.22 | CPU 160→80MHz awake | Screen on | — | 43.4 mA |
+| V1.23 | Bug fix: CPU now starts at 80MHz at boot (was defaulting to 240MHz until the first sleep/wake cycle) | — | — | — |
+| V1.3 | Real light sleep (`esp_light_sleep_start`), GPIO wake polarity fix | **Screen off (asleep)** | — | **~5 mA** |
 
-What V1.2/V1.21 does:
+What each version changed:
 
 - **Backlight PWM** (`ledcAttach`/`ledcWrite` on `TFT_BL`, 5 kHz, 8-bit) —
   duty `BL_DUTY_ON = 70` (~27%) instead of always-on full brightness. The
   backlight was roughly half the screen-on budget.
-- **CPU frequency scaling** — 160 MHz awake (240 was never needed for this
-  UI), 80 MHz while the display sleeps.
-- **Display sleep** — after 30 s inactivity (`SLEEP_TIMEOUT_MS`): backlight
-  off, panel `SLPIN`, touch controller into hardware standby, loop throttled
-  to a 200 ms LVGL tick (clock/reminders still run). Any touch wakes it.
-- **Touch wake path** — `touch.sleep()`'s internal reset pulse glitches the
-  IRQ line, so the library ISR is detached around it and a minimal wake ISR
-  (`touch_wake_isr`) is armed instead; `touch.begin()` re-inits on wake.
-  Without this the screen woke itself ~120 ms after every sleep.
+- **CPU frequency scaling while awake** — tuned down from 240 MHz → 160 MHz
+  (V1.21) → 80 MHz (V1.22); this UI's redraw load never needed more.
+  V1.23 fixed a bug where the boot-time clock wasn't set at all, so the
+  device ran at the 240 MHz default until the first sleep/wake cycle.
+- **Display sleep timeout** — 15 s of inactivity (`SLEEP_TIMEOUT_MS`, reduced
+  from 30 s) triggers backlight off + panel `SLPIN` + touch controller into
+  hardware standby. Any touch wakes it.
+- **Real light sleep (V1.3)** — replaced the old "soft sleep" (CPU merely
+  downclocked, `lv_timer_handler()` polled every 200 ms) with an actual
+  `esp_light_sleep_start()` call: the CPU fully halts between wake events
+  instead of spinning. Chosen over deep sleep specifically because deep sleep
+  wipes RAM and would force a full `setup()`/LVGL rebuild (~1 s) on every
+  wake — light sleep keeps state intact and resumes instantly. Wake sources:
+  GPIO on the touch IRQ pin (level-triggered — had to flip to
+  `GPIO_INTR_LOW_LEVEL` after discovering the idle level was the opposite of
+  what the `RISING`-edge convention implied, which was silently rejecting
+  every sleep attempt) plus a 2 s periodic timer backstop. Dropped
+  screen-off current from ~28 mA to **~5 mA**.
+- **RC-oscillator drift management (V1.3)** — this board has no accessible
+  32.768kHz crystal (the ESP32-S3's `XTAL_32K_P/N` pins aren't broken out to
+  any header, only to 0.4mm-pitch chip pads), so the RTC timekeeping used
+  during light sleep runs on the internal RC oscillator. Rather than leaving
+  that uncorrected, the 2 s periodic wake above keeps ESP-IDF's automatic
+  RC-vs-main-crystal recalibration fresh (it re-measures the RC oscillator's
+  frequency against the accurate 40MHz main crystal on every wake), bounding
+  drift to roughly the target of ~1/8 s per day for this watch instead of
+  letting temperature drift accumulate uncorrected for hours.
+- **Clock drift fix** — `updateClock()` now advances by the actual elapsed
+  `millis()` delta instead of a flat +1 per callback, so a late or skipped
+  tick (from sleep) can't silently lose time.
 - **Static swipe arrows** — a running LVGL animation invalidates its object
   every refresh cycle forever; the old arrow sway cost ~10% of screen-on
   charge.
+- **Touch wake path** — `touch.sleep()`'s internal reset pulse glitches the
+  IRQ line; the library ISR is detached around it so the glitch isn't
+  mistaken for a real touch. The wake-from-sleep path itself is now the
+  hardware GPIO-wake mechanism above, not a software interrupt.
 - **Wake race fix (V1.21)** — inactivity is reset immediately on wake and
   `screen_sleep_cb` is blocked during the 120 ms deferred backlight window,
   otherwise the panel could re-sleep mid-wake leaving a lit black screen.
 
-Not yet done (known next steps): shorter screen timeout, brightness setting
-in the settings screen, suspending the unused onboard IMU, and automatic
-light sleep (`esp_pm_configure` — requires rebuilding the Arduino static
-libs with `CONFIG_PM_ENABLE`, see esp32-arduino-lib-builder).
+Not yet done (known next steps): brightness setting in the settings screen,
+suspending the unused onboard IMU, relaxing the 2 s wake-timer interval now
+that touch-wake reliability is confirmed, and a physical vibration motor
+(driver circuit designed — low-side N-channel MOSFET + flyback diode off a
+free `GPIO_OUT` header pin — not yet installed).
 
 ---
 
@@ -467,7 +504,7 @@ offline. All state persists via ESP32 Preferences (NVS flash storage).
 ## Hardware
 
 - **Board**: Waveshare ESP32-S3-Touch-LCD-1.28
-- **MCU**: ESP32-S3 (240 MHz capable; firmware runs 160 MHz awake / 80 MHz asleep, 320KB SRAM, 16MB Flash, 2MB PSRAM)
+- **MCU**: ESP32-S3 (240 MHz capable; firmware runs 80 MHz awake, real `esp_light_sleep_start()` — CPU halted, not just downclocked — while the screen is off, 320KB SRAM, 16MB Flash, 2MB PSRAM)
 - **Display**: 1.28" round TFT, 240×240, GC9A01, SPI (40 MHz)
 - **Touch**: CST816S capacitive, I2C (pins 6/7)
 - **Battery**: ADC pin 1 (GPIO1), 200K+100K voltage divider (3:1 ratio), ETA6096 charger
