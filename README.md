@@ -333,6 +333,7 @@ serial markers on one timeline).
 | V1.22 | CPU 160→80MHz awake | Screen on | — | 43.4 mA |
 | V1.23 | Bug fix: CPU now starts at 80MHz at boot (was defaulting to 240MHz until the first sleep/wake cycle) | — | — | — |
 | V1.3 | Real light sleep (`esp_light_sleep_start`), GPIO wake polarity fix | **Screen off (asleep)** | — | **~5 mA** |
+| V1.31 | Wake-timer interval 2s→60s, onboard IMU powered down | **Screen off (asleep)** | — | **~4.8 mA** |
 
 What each version changed:
 
@@ -355,17 +356,36 @@ What each version changed:
   GPIO on the touch IRQ pin (level-triggered — had to flip to
   `GPIO_INTR_LOW_LEVEL` after discovering the idle level was the opposite of
   what the `RISING`-edge convention implied, which was silently rejecting
-  every sleep attempt) plus a 2 s periodic timer backstop. Dropped
-  screen-off current from ~28 mA to **~5 mA**.
-- **RC-oscillator drift management (V1.3)** — this board has no accessible
-  32.768kHz crystal (the ESP32-S3's `XTAL_32K_P/N` pins aren't broken out to
-  any header, only to 0.4mm-pitch chip pads), so the RTC timekeeping used
-  during light sleep runs on the internal RC oscillator. Rather than leaving
-  that uncorrected, the 2 s periodic wake above keeps ESP-IDF's automatic
-  RC-vs-main-crystal recalibration fresh (it re-measures the RC oscillator's
-  frequency against the accurate 40MHz main crystal on every wake), bounding
-  drift to roughly the target of ~1/8 s per day for this watch instead of
-  letting temperature drift accumulate uncorrected for hours.
+  every sleep attempt) plus a periodic timer backstop (60 s as of V1.31, up
+  from 2 s at V1.3 launch — see below; means a missed GPIO wake could in
+  theory delay a touch response by up to that long, though the polarity fix
+  above has made GPIO wake reliable in testing). Dropped screen-off current
+  from ~28 mA to **~5 mA**.
+- **RC-oscillator drift management (V1.3, interval tuned in V1.31)** — a 32.768kHz crystal was bought
+  for this board with the intent of using it for accurate RTC timekeeping,
+  but it turned out not to be practically usable: the ESP32-S3's
+  `XTAL_32K_P`/`XTAL_32K_N` pins aren't broken out to any header or test pad
+  on this board, only to the two chip legs directly on the QFN package
+  itself (0.4mm pin pitch). Wiring a crystal there would mean soldering
+  bodge wires onto adjacent fine-pitch chip pins by hand — that needs
+  hot-air rework and microscope-level precision, with real risk of
+  solder-bridging a neighboring pin and bricking the module, so it wasn't
+  attempted. Without it, the RTC timekeeping used during light sleep runs
+  on the internal RC oscillator instead. **No custom resync
+  code was written for this** — there's no function anywhere that reads the
+  RC oscillator and compares it against the main crystal. ESP-IDF already
+  does that recalibration automatically and internally on every sleep/wake
+  transition, as part of `esp_light_sleep_start()` itself; it isn't exposed
+  as something app code calls. Our only lever is *how often* that transition
+  happens — the periodic wake (`SLEEP_WAKE_INTERVAL_US`, 60 s) exists to
+  keep giving that built-in recalibration a fresh chance to run, rather than
+  letting temperature drift accumulate uncorrected across a much longer
+  sleep window. The 60 s cadence matches what's reported (external sources
+  below) to achieve ~10ppm RTC accuracy this way — that figure has not been
+  independently measured on this specific device, it's the cadence a
+  similar published technique used:
+  - [Managing RTC clock drift in deep sleep? — ESP32 Forum](https://esp32.com/viewtopic.php?t=35490)
+  - [A Complete Guide to Checking RTC Accuracy on the ESP32 — Medium](https://medium.com/@raypcb/a-complete-guide-to-checking-rtc-accuracy-on-the-esp32-3f83a5c70ec7)
 - **Clock drift fix** — `updateClock()` now advances by the actual elapsed
   `millis()` delta instead of a flat +1 per callback, so a late or skipped
   tick (from sleep) can't silently lose time.
@@ -379,12 +399,23 @@ What each version changed:
 - **Wake race fix (V1.21)** — inactivity is reset immediately on wake and
   `screen_sleep_cb` is blocked during the 120 ms deferred backlight window,
   otherwise the panel could re-sleep mid-wake leaving a lit black screen.
+- **IMU power-down (V1.31)** — the onboard QMI8658A (accel+gyro, address `0x6B`,
+  SA0 grounded) is never used by this firmware, so it was left sitting in
+  its power-on-reset default state indefinitely: per its datasheet
+  (Table 31, Operating Modes) that's "Power-On Default" — both sensors off
+  but the internal high-speed clock still running, ~15µA. One I2C write in
+  `setup()` (`CTRL1` register, `SensorDisable` bit) drops it into
+  "Power-Down" mode, ~6µA — the lowest documented state that still keeps
+  the I2C interface responsive. That's the datasheet's floor for a powered
+  chip; going lower would mean physically cutting `VDD`/`VDDIO`, which on
+  this board are hard-wired to the shared `3V3` rail with no dedicated load
+  switch, so not pursued (6µA against a ~5mA total sleep budget is a small
+  fraction anyway).
 
 Not yet done (known next steps): brightness setting in the settings screen,
-suspending the unused onboard IMU, relaxing the 2 s wake-timer interval now
-that touch-wake reliability is confirmed, and a physical vibration motor
-(driver circuit designed — low-side N-channel MOSFET + flyback diode off a
-free `GPIO_OUT` header pin — not yet installed).
+and a physical vibration motor (driver circuit designed — low-side
+N-channel MOSFET + flyback diode off a free `GPIO_OUT` header pin — not yet
+installed).
 
 ---
 
@@ -495,6 +526,7 @@ pio device monitor --port /dev/ttyUSB0 --baud 115200
 | Bodmer/TFT_eSPI | 2.5.43 | Display driver (GC9A01, SPI) |
 | fbiego/CST816S | 1.1.1 | Touch driver (I2C) |
 | Preferences | — | Counter + time + phrase persistence (NVS) |
+| Wire | — | Raw I2C write to power down the unused onboard IMU |
 
 WiFi, WebServer, WiFiManager, and ArduinoJson were removed — the device is fully
 offline. All state persists via ESP32 Preferences (NVS flash storage).

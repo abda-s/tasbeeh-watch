@@ -3,6 +3,7 @@
 #include <SPIFFS.h>
 using namespace fs;
 #include <CST816S.h>
+#include <Wire.h>
 #include <lvgl.h>
 #if LV_USE_TFT_ESPI
 #include <TFT_eSPI.h>
@@ -72,8 +73,11 @@ static bool display_sleeping = false;
 // frequency was set beforehand. Wake at least this often so ESP-IDF's
 // automatic RC-oscillator-vs-main-crystal RTC recalibration stays fresh
 // (bounds temperature drift) and so a touch has a timer backstop in case
-// the GPIO-level wake (see sleep_display()) doesn't latch it.
-#define SLEEP_WAKE_INTERVAL_US (2ULL * 1000 * 1000)
+// the GPIO-level wake (see sleep_display()) doesn't latch it. ~1 minute
+// matches the cadence reported to achieve ~10ppm RTC accuracy on ESP32:
+// https://esp32.com/viewtopic.php?t=35490
+// https://medium.com/@raypcb/a-complete-guide-to-checking-rtc-accuracy-on-the-esp32-3f83a5c70ec7
+#define SLEEP_WAKE_INTERVAL_US (60ULL * 1000 * 1000)
 
 // Backlight PWM (replaces plain digitalWrite on/off)
 #define BL_PWM_FREQ_HZ 5000
@@ -83,6 +87,25 @@ static bool display_sleeping = false;
 #define BL_DUTY_ON  70   // ~27% — measured ~52mA avg screen-on (was 85mA at 100%)
 
 #define BL_DUTY_OFF 0
+
+// Onboard QMI8658A IMU (accel+gyro) — unused by this firmware, but present
+// on the board and left running at its power-on default otherwise. Per its
+// datasheet (Table 31, Operating Modes): the reset-default "Power-On
+// Default" state (both sensors off, high-speed clock still running) draws
+// ~15uA. Setting CTRL1 bit0 (SensorDisable) drops it into "Power-Down"
+// mode (~6uA), the lowest documented state that still keeps the I2C
+// interface responsive. SA0 is grounded on this board (schematic), so the
+// device address is 0x6B.
+#define QMI8658_I2C_ADDR 0x6B
+#define QMI8658_REG_CTRL1 0x02
+
+static void imu_power_down() {
+    Wire.beginTransmission(QMI8658_I2C_ADDR);
+    Wire.write(QMI8658_REG_CTRL1);
+    Wire.write(0x21);   // CTRL1 default (0x20, BE=1) | SensorDisable=1
+    uint8_t err = Wire.endTransmission();
+    Serial.printf("[IMU] power-down write %s\n", err == 0 ? "OK" : "FAILED");
+}
 
 static int getBatteryPercent() {
     long sum = 0;
@@ -405,6 +428,8 @@ void setup() {
     Serial.println("[1] touch.begin...");
     touch.begin();
     Serial.println("[1] OK");
+
+    imu_power_down();   // unused IMU: drop from ~15uA power-on default to ~6uA power-down
 
     analogReadResolution(12);
     analogSetPinAttenuation(BAT_ADC, ADC_11db);
