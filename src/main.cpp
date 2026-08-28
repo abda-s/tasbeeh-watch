@@ -28,6 +28,7 @@ static void my_disp_flush_dma(lv_display_t *disp, const lv_area_t *area, uint8_t
 #include "driver/gpio.h"
 
 #include "config/CST816S_pin_config.h"
+#include "config/reminders_config.h"
 #include "ui/styles.h"
 #include "ui/screens.h"
 #include "indev/lv_indev_private.h"
@@ -36,14 +37,18 @@ LV_FONT_DECLARE(font_alexandria_16);
 LV_FONT_DECLARE(font_alexandria_28);
 LV_FONT_DECLARE(font_alexandria_12);
 
-// ── Types relocated from web_dashboard.h (now removed) ───────
-struct Reminder {
-    int  hour, minute;
-    char label[32];
-    bool enabled;
-};
+// Reminder struct / MAX_REMINDERS / REMINDER_DAYS_ALL now live in screens.h
+// (shared with screen_notifications.cpp and screen_timeedit.cpp).
 #define BAT_ADC 1
-#define MAX_REMINDERS 10
+
+// Sakamoto's algorithm: weekday of a Gregorian date, 0=Sun..6=Sat.
+// Needed because day_/month_/year_ track a calendar date but nothing
+// currently derives a day-of-week from it.
+static int weekday_from_date(int d, int m, int y) {
+    static const int t[] = {0, 3, 2, 5, 0, 3, 5, 1, 4, 6, 2, 4};
+    if (m < 3) y -= 1;
+    return (y + y / 4 - y / 100 + y / 400 + t[m - 1] + d) % 7;
+}
 
 CST816S     touch(TOUCH_SDA, TOUCH_SCL, TOUCH_RST, TOUCH_IRQ);
 Preferences prefs;
@@ -64,6 +69,14 @@ static lv_timer_t *battery_timer_obj = NULL;
 static lv_display_t *lv_disp = NULL;
 static bool display_sleeping = false;
 #define SLEEP_TIMEOUT_MS 15000
+
+// GC9A01A datasheet (SLPOUT §6.2.4): only a 5ms wait is required after
+// SLPOUT before the next command (supply/clock stabilization) — the 120ms
+// figure elsewhere in that datasheet governs a different thing (minimum
+// dwell time before flipping back into the opposite sleep state, which our
+// 15s SLEEP_TIMEOUT_MS is nowhere near anyway). 20ms gives 4x margin over
+// the real 5ms minimum while cutting most of the old, over-conservative delay.
+#define WAKE_DISPON_DELAY_MS 20
 
 // #define AWAKE_CPU_MHZ 240
 // #define AWAKE_CPU_MHZ 160  // UI is light (partial redraws over 40MHz SPI+DMA); 240 not needed
@@ -170,6 +183,7 @@ void saveReminders() {
         prefs.putInt((b + "m").c_str(), reminders[i].minute);
         prefs.putBool((b + "e").c_str(), reminders[i].enabled);
         prefs.putString((b + "l").c_str(), reminders[i].label);
+        prefs.putUChar((b + "d").c_str(), reminders[i].days);
     }
 }
 
@@ -182,8 +196,44 @@ static void loadReminders() {
         String lbl = prefs.getString((b + "l").c_str(), "");
         strncpy(reminders[i].label, lbl.c_str(), 31);
         reminders[i].label[31] = '\0';
+        reminders[i].days = prefs.getUChar((b + "d").c_str(), REMINDER_DAYS_ALL);
         reminderFired[i] = false;
     }
+}
+
+// Applies REMINDER_PRESETS (config/reminders_config.h) to reminders[0 ..
+// REMINDER_PRESET_COUNT-1] whenever that table has changed since the last
+// boot (tracked via REMINDER_PRESET_VERSION). Labels are always refreshed
+// from the table so renames take effect; hour/minute/enabled/days are only
+// (re)initialized for slots that are newly added, so a parent's existing
+// customization on a preset that's still there survives editing the table.
+// Slots that used to be presets but were removed from the table get cleared.
+static void syncReminderPresets() {
+    int storedVersion = prefs.getInt("remseed_v", -1);
+    if (storedVersion == REMINDER_PRESET_VERSION) return;
+
+    int oldCount = prefs.getInt("remseed_n", 0);
+
+    for (unsigned i = 0; i < REMINDER_PRESET_COUNT; i++) {
+        strncpy(reminders[i].label, REMINDER_PRESETS[i].label, 31);
+        reminders[i].label[31] = '\0';
+        if ((int)i >= oldCount) {   // newly added row — apply its defaults
+            reminders[i].hour    = REMINDER_PRESETS[i].hour;
+            reminders[i].minute  = REMINDER_PRESETS[i].minute;
+            reminders[i].enabled = false;
+            reminders[i].days    = REMINDER_DAYS_ALL;
+        }
+    }
+    for (int i = REMINDER_PRESET_COUNT; i < oldCount && i < MAX_REMINDERS; i++) {
+        reminders[i].label[0] = '\0';
+        reminders[i].hour = 8; reminders[i].minute = 0;
+        reminders[i].enabled = false;
+        reminders[i].days = REMINDER_DAYS_ALL;
+    }
+
+    saveReminders();
+    prefs.putInt("remseed_v", REMINDER_PRESET_VERSION);
+    prefs.putInt("remseed_n", (int)REMINDER_PRESET_COUNT);
 }
 
 static void dismiss_cb(lv_event_t *e) {
@@ -288,9 +338,18 @@ static void wake_display(void);
 
 static void checkReminders() {
     if (reminderActive) return;
+    // Deliberately no "second_ == 0" gate: while asleep, checkReminders() only
+    // runs at sparse wake events (touch, or every SLEEP_WAKE_INTERVAL_US), not
+    // every second, so the exact-second instant is almost never observed. The
+    // reminderFired[] flag below already dedups (fires once on entering the
+    // target minute, resets once we leave it), so matching on hour+minute
+    // alone is both sufficient and required for reminders to fire reliably
+    // while light-sleeping.
+    int today = weekday_from_date(day_, month_, year_);
     for (int i = 0; i < MAX_REMINDERS; i++) {
         if (!reminders[i].enabled) { reminderFired[i] = false; continue; }
-        if (hour_ == reminders[i].hour && minute_ == reminders[i].minute && second_ == 0) {
+        bool dayOk = reminders[i].days & (1 << today);
+        if (dayOk && hour_ == reminders[i].hour && minute_ == reminders[i].minute) {
             if (!reminderFired[i]) {
                 reminderFired[i] = true;
                 popupRemIdx = i;
@@ -359,18 +418,20 @@ static bool wake_pending = false;
 static uint32_t wake_time = 0;
 
 static void wake_display() {
-    detachInterrupt(TOUCH_IRQ);
-    touch.begin();                               // re-init touch chip + reattach its real ISR
+    touch.rearm();                               // reattach ISR only, no hardware reset —
+                                                  // chip already back in dynamic mode on its
+                                                  // own (that's what generated this wake);
+                                                  // begin()'s ~110ms reset was pure latency
 
     setCpuFrequencyMhz(AWAKE_CPU_MHZ);
     tft.writecommand(0x11);                     // TFT_SLPOUT
     display_sleeping = false;                   // mark awake immediately so touch works
     lv_display_trigger_activity(lv_disp);       // reset inactivity NOW — otherwise
                                                 // screen_sleep_cb can fire inside the
-                                                // 120ms window below and re-sleep the
-                                                // panel (backlight on + black screen)
+                                                // WAKE_DISPON_DELAY_MS window below and
+                                                // re-sleep the panel (backlight on + black screen)
     wake_pending = true;
-    wake_time = millis();                       // defer DISPON + backlight by 120ms
+    wake_time = millis();                       // defer DISPON + backlight briefly
 }
 
 static void screen_sleep_cb(lv_timer_t *t) {
@@ -442,6 +503,7 @@ void setup() {
     totalTasbeeh      = prefs.getUInt("totaltasbeeh", 0);
     totalIstighfar    = prefs.getUInt("totalisteghfar", 0);
     loadReminders();
+    syncReminderPresets();
     loadTime();
     last_clock_ms = millis();
     prefs.putInt("popup_idx", -1);  // clear any stale popup from previous crash
@@ -523,7 +585,7 @@ void setup() {
 }
 
 void loop() {
-    if (wake_pending && millis() - wake_time >= 120) {
+    if (wake_pending && millis() - wake_time >= WAKE_DISPON_DELAY_MS) {
         wake_pending = false;
         tft.writecommand(0x29);                 // TFT_DISPON
         ledcWrite(TFT_BL, BL_DUTY_ON);
@@ -554,6 +616,8 @@ void loop() {
         // rather than waking ~200x/s to find nothing to do.
         uint32_t wait_ms = lv_timer_handler();
         if (wait_ms == LV_NO_TIMER_READY) wait_ms = LV_DEF_REFR_PERIOD;
-        delay(constrain(wait_ms, 1, 50));   // cap keeps wake_pending's 120ms deferral timely
+        delay(constrain(wait_ms, 1, 50));   // cap keeps wake_pending's DISPON check responsive
+                                            // (worst case ~50ms past WAKE_DISPON_DELAY_MS,
+                                            // still well under the touch-to-visible budget)
     }
 }

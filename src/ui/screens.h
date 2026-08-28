@@ -10,6 +10,18 @@
 
 extern lv_obj_t *ring_screens[RING_LEN];
 
+// ── Reminders (shared: main.cpp owns storage/firing, UI reads/writes it) ──
+#define MAX_REMINDERS 10
+#define REMINDER_DAYS_ALL 0x7F
+struct Reminder {
+    int  hour, minute;
+    char label[32];
+    bool enabled;
+    uint8_t days;   // bitmask, bit0=Sun .. bit6=Sat. 0x7F = every day.
+};
+extern Reminder reminders[MAX_REMINDERS];
+void saveReminders(void);
+
 // Ring screens
 extern lv_obj_t *scr_home;
 extern lv_obj_t *scr_istighfar;
@@ -18,6 +30,7 @@ extern lv_obj_t *scr_tasbeeh;
 // Modal screens
 extern lv_obj_t *scr_settings;
 extern lv_obj_t *scr_timeedit;
+extern lv_obj_t *scr_notifications;
 
 // ── Home / Clock screen widgets ───────────────────────────────
 extern lv_obj_t *home_day_label;
@@ -58,6 +71,18 @@ extern int timeedit_ampm;
 void update_timeedit_highlight(void);
 void resetClockTick(void);
 
+// timeedit doubles as a reminder-time/day editor: CLOCK mode edits the
+// system clock (existing behavior, HH:MM + date); REMINDER mode edits
+// reminders[timeedit_reminder_idx]'s HH:MM + day-of-week mask instead
+// (no date fields). Don't set these directly — call open_timeedit_clock()
+// or open_timeedit_reminder() below, which populate everything and push.
+enum { TIMEEDIT_MODE_CLOCK = 0, TIMEEDIT_MODE_REMINDER = 1 };
+extern int timeedit_mode;
+extern int timeedit_reminder_idx;
+extern uint8_t timeedit_days;   // working copy of the day-of-week mask, REMINDER mode only
+void open_timeedit_clock(void);       // populate from hour_/minute_/day_/month_/year_, then push_modal
+void open_timeedit_reminder(int idx); // populate from reminders[idx], then push_modal
+
 // ── Navigation helpers ────────────────────────────────────────
 void navigate_to_ring(int idx);
 void navigate_ring(int delta);
@@ -74,6 +99,8 @@ void create_screen_istighfar(void);
 void create_screen_tasbeeh(void);
 void create_screen_settings(void);
 void create_screen_timeedit(void);
+void create_screen_notifications(void);
+void refresh_notifications_list(void);
 
 // ── Update helpers (called from main timer) ───────────────────
 void update_home_clock(void);

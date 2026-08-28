@@ -6,6 +6,7 @@ lv_obj_t *scr_istighfar  = NULL;
 lv_obj_t *scr_tasbeeh    = NULL;
 lv_obj_t *scr_settings   = NULL;
 lv_obj_t *scr_timeedit   = NULL;
+lv_obj_t *scr_notifications = NULL;
 
 void screens_init(void) {
     create_screen_home();
@@ -13,6 +14,7 @@ void screens_init(void) {
     create_screen_tasbeeh();
     create_screen_settings();
     create_screen_timeedit();
+    create_screen_notifications();
 
     ring_screens[0] = scr_home;
     ring_screens[1] = scr_istighfar;
@@ -46,11 +48,16 @@ void screens_init(void) {
 #endif
     }
 
-    lv_obj_t *modal_screens[] = { scr_settings, scr_timeedit };
-    for (int m = 0; m < 2; m++) {
+    lv_obj_t *modal_screens[] = { scr_settings, scr_timeedit, scr_notifications };
+    for (int m = 0; m < 3; m++) {
         lv_obj_t *ms = modal_screens[m];
         lv_obj_add_event_cb(ms, gesture_modal_cb, LV_EVENT_GESTURE, NULL);
-        if (ms != scr_timeedit) {
+        // scr_settings excluded: tapping its background used to dismiss it,
+        // which made taps near (but not quite on) an option button
+        // occasionally register as "go back" instead. Its title label now
+        // carries its own back handler (screen_settings.cpp) — that's the
+        // only tap-to-dismiss path there; the swipe gesture above still works.
+        if (ms != scr_timeedit && ms != scr_settings) {
             if (!lv_obj_has_flag(ms, LV_OBJ_FLAG_CLICKABLE))
                 lv_obj_add_flag(ms, LV_OBJ_FLAG_CLICKABLE);
             lv_obj_add_event_cb(ms, modal_bg_tap_cb, LV_EVENT_CLICKED, NULL);

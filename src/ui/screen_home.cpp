@@ -56,25 +56,6 @@ static void gear_click_cb(lv_event_t *e) {
     push_modal(scr_settings);
 }
 
-static void clock_long_press_cb(lv_event_t *e) {
-    if (lv_screen_active() != scr_home) return;
-    timeedit_ampm  = (hour_ >= 12) ? 1 : 0;
-    timeedit_hour  = hour_ % 12;
-    if (timeedit_hour == 0) timeedit_hour = 12;
-    timeedit_min   = minute_;
-    timeedit_day   = day_;
-    timeedit_month = month_;
-    timeedit_year  = year_;
-    timeedit_field = 0;
-    lv_label_set_text_fmt(te_hour_label, "%02d", timeedit_hour);
-    lv_label_set_text_fmt(te_min_label,  "%02d", timeedit_min);
-    lv_label_set_text_fmt(te_day_label,  "%02d", timeedit_day);
-    lv_label_set_text_fmt(te_mon_label,  "%02d", timeedit_month);
-    lv_label_set_text_fmt(te_year_label, "%04d", timeedit_year);
-    update_timeedit_highlight();
-    push_modal(scr_timeedit);
-}
-
 void update_home_clock(void)
 {
     if (!home_clock_label) return;
@@ -143,14 +124,6 @@ void create_screen_home(void)
     lv_obj_set_style_text_color(home_ampm_label, color_gold, 0);
     lv_label_set_text(home_ampm_label, "\330\265");
     lv_obj_align(home_ampm_label, LV_ALIGN_CENTER, 55, 0);
-
-    lv_obj_t *clock_tap = lv_obj_create(scr_home);
-    lv_obj_set_size(clock_tap, 120, 100);
-    lv_obj_align(clock_tap, LV_ALIGN_CENTER, 0, 0);
-    lv_obj_set_style_bg_opa(clock_tap, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_width(clock_tap, 0, 0);
-    lv_obj_add_flag(clock_tap, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_add_event_cb(clock_tap, clock_long_press_cb, LV_EVENT_LONG_PRESSED, NULL);
 
     // ── Gregorian date ───────────────────────────────────
     home_date_label = lv_label_create(scr_home);

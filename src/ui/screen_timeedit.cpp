@@ -14,11 +14,28 @@ int timeedit_hour, timeedit_min, timeedit_day, timeedit_month, timeedit_year;
 int timeedit_field = 0;
 int timeedit_ampm  = 0;
 
+int     timeedit_mode = TIMEEDIT_MODE_CLOCK;
+int     timeedit_reminder_idx = 0;
+uint8_t timeedit_days = REMINDER_DAYS_ALL;
+
 lv_obj_t *te_hour_label = NULL, *te_min_label = NULL;
 lv_obj_t *te_day_label = NULL, *te_mon_label = NULL, *te_year_label = NULL;
 lv_obj_t *te_ampm_label = NULL;
 
 static lv_obj_t *te_conts[6];
+static lv_obj_t *te_title_label = NULL;
+
+// Date row (day/month/year fields + their "/" separators) — CLOCK mode only.
+static lv_obj_t *te_date_row_objs[5];
+#define TE_DATE_ROW_N 5
+
+// Day-of-week toggles (Sun..Sat) — REMINDER mode only.
+static lv_obj_t *te_days_cont = NULL;
+static lv_obj_t *te_day_toggles[7];
+static const char *DAY_INITIALS_AR[7] = {
+    "ح", "ن", "ث", "ر", "خ", "ج", "س"
+    // Sun  Mon  Tue  Wed  Thu  Fri  Sat
+};
 
 void update_timeedit_highlight(void) {
     lv_obj_t **labels[6] = {&te_hour_label, &te_min_label, &te_day_label, &te_mon_label, &te_year_label, &te_ampm_label};
@@ -73,12 +90,33 @@ static void timeedit_select_field_cb(lv_event_t *e) {
     update_timeedit_highlight();
 }
 
+static void timeedit_day_toggle_cb(lv_event_t *e) {
+    int bit = (int)(uintptr_t)lv_event_get_user_data(e);
+    timeedit_days ^= (1 << bit);
+    bool on = timeedit_days & (1 << bit);
+    lv_obj_set_style_bg_color(te_day_toggles[bit], on ? color_teal : color_surface, 0);
+}
+
 static void timeedit_save_cb(lv_event_t *e) {
     if (lv_screen_active() != scr_timeedit) return;
+
+    int h24;
     if (timeedit_ampm == 0)
-        hour_ = (timeedit_hour == 12) ? 0 : timeedit_hour;
+        h24 = (timeedit_hour == 12) ? 0 : timeedit_hour;
     else
-        hour_ = (timeedit_hour == 12) ? 12 : timeedit_hour + 12;
+        h24 = (timeedit_hour == 12) ? 12 : timeedit_hour + 12;
+
+    if (timeedit_mode == TIMEEDIT_MODE_REMINDER) {
+        reminders[timeedit_reminder_idx].hour   = h24;
+        reminders[timeedit_reminder_idx].minute = timeedit_min;
+        reminders[timeedit_reminder_idx].days   = timeedit_days;
+        saveReminders();
+        refresh_notifications_list();
+        pop_modal();
+        return;
+    }
+
+    hour_   = h24;
     minute_ = timeedit_min;
     second_ = 0;
     day_    = timeedit_day;
@@ -137,21 +175,23 @@ void create_screen_timeedit(void) {
     lv_obj_set_flex_flow(title_cont, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(title_cont, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_align(title_cont, LV_ALIGN_CENTER, 0, -82);
+    // Whole bar is the back target, not just the two labels' tight glyph
+    // bounds — a single "<" or a short title is a tiny precision target on
+    // its own; the container is 180x36, much easier to actually hit.
+    lv_obj_add_flag(title_cont, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(title_cont, timeedit_cancel_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_set_ext_click_area(title_cont, 6);   // small margin; time row starts ~5px below
 
     lv_obj_t *back_arrow = lv_label_create(title_cont);
     lv_obj_set_style_text_font(back_arrow, &font_alexandria_28, 0);
     lv_obj_set_style_text_color(back_arrow, color_gold, 0);
     lv_label_set_text(back_arrow, "<");
-    lv_obj_add_flag(back_arrow, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_add_event_cb(back_arrow, timeedit_cancel_cb, LV_EVENT_CLICKED, NULL);
 
-    lv_obj_t *title = lv_label_create(title_cont);
-    lv_obj_set_style_text_font(title, &font_alexandria_16, 0);
-    lv_obj_set_style_text_color(title, color_ivory, 0);
-    lv_label_set_text(title,
+    te_title_label = lv_label_create(title_cont);
+    lv_obj_set_style_text_font(te_title_label, &font_alexandria_16, 0);
+    lv_obj_set_style_text_color(te_title_label, color_ivory, 0);
+    lv_label_set_text(te_title_label,
         "\330\266\330\250\330\267 \330\247\331\204\331\210\331\202\330\252");
-    lv_obj_add_flag(title, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_add_event_cb(title, timeedit_cancel_cb, LV_EVENT_CLICKED, NULL);
 
     int *vals[5] = {&timeedit_hour, &timeedit_min, &timeedit_day, &timeedit_month, &timeedit_year};
     const char *fmts[5] = {"%02d", "%02d", "%02d", "%02d", "%04d"};
@@ -208,6 +248,50 @@ void create_screen_timeedit(void) {
     lv_label_set_text(s2, "/");
     lv_obj_align(s2, LV_ALIGN_CENTER, 6, 8);
 
+    te_date_row_objs[0] = te_conts[2];
+    te_date_row_objs[1] = te_conts[3];
+    te_date_row_objs[2] = te_conts[4];
+    te_date_row_objs[3] = s1;
+    te_date_row_objs[4] = s2;
+
+    // ── Day-of-week toggles (y = 10, same slot as the date row) ──
+    //   REMINDER mode only — built here so create_screen_timeedit() only
+    //   runs once (screens are created once in screens_init() and reused,
+    //   not rebuilt per open); open_timeedit_reminder()/open_timeedit_clock()
+    //   below just show/hide this row vs. the date row per open.
+    lv_obj_t *days_cont = lv_obj_create(scr_timeedit);
+    lv_obj_set_size(days_cont, 210, 32);
+    lv_obj_align(days_cont, LV_ALIGN_CENTER, 0, 12);
+    lv_obj_set_style_bg_opa(days_cont, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(days_cont, 0, 0);
+    lv_obj_set_style_pad_all(days_cont, 0, 0);
+    lv_obj_clear_flag(days_cont, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_flex_flow(days_cont, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(days_cont, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+
+    for (int d = 0; d < 7; d++) {
+        lv_obj_t *tgl = lv_obj_create(days_cont);
+        lv_obj_set_size(tgl, 26, 26);
+        lv_obj_set_style_radius(tgl, LV_RADIUS_CIRCLE, 0);
+        lv_obj_set_style_bg_opa(tgl, LV_OPA_COVER, 0);
+        lv_obj_set_style_bg_color(tgl, color_surface, 0);
+        lv_obj_set_style_border_width(tgl, 1, 0);
+        lv_obj_set_style_border_color(tgl, color_border, 0);
+        lv_obj_clear_flag(tgl, LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_add_flag(tgl, LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_add_event_cb(tgl, timeedit_day_toggle_cb, LV_EVENT_CLICKED, (void *)(uintptr_t)d);
+
+        lv_obj_t *dl = lv_label_create(tgl);
+        lv_obj_set_style_text_font(dl, &font_alexandria_12, 0);
+        lv_obj_set_style_text_color(dl, color_ivory, 0);
+        lv_label_set_text(dl, DAY_INITIALS_AR[d]);
+        lv_obj_center(dl);
+
+        te_day_toggles[d] = tgl;
+    }
+    te_days_cont = days_cont;
+    lv_obj_add_flag(te_days_cont, LV_OBJ_FLAG_HIDDEN);   // hidden until REMINDER mode
+
     timeedit_field = 0;
     update_timeedit_highlight();
 
@@ -245,4 +329,70 @@ void create_screen_timeedit(void) {
     lv_label_set_text(up_lbl, "+");
     lv_obj_center(up_lbl);
     lv_obj_add_event_cb(up_btn, timeedit_up_cb, LV_EVENT_CLICKED, NULL);
+}
+
+// ── Shared entry points ──────────────────────────────────────────
+// The screen is built once (screens_init()) and reused, so opening it in
+// either mode means: pick which row is visible (date vs. day-toggles),
+// load the right source data into the timeedit_* working vars + labels,
+// then push_modal(). Keeps all of scr_timeedit's field-population logic
+// in one place instead of duplicating it in every caller.
+
+static void show_date_row(bool show) {
+    for (int i = 0; i < TE_DATE_ROW_N; i++) {
+        if (show) lv_obj_remove_flag(te_date_row_objs[i], LV_OBJ_FLAG_HIDDEN);
+        else      lv_obj_add_flag(te_date_row_objs[i], LV_OBJ_FLAG_HIDDEN);
+    }
+    if (show) lv_obj_add_flag(te_days_cont, LV_OBJ_FLAG_HIDDEN);
+    else      lv_obj_remove_flag(te_days_cont, LV_OBJ_FLAG_HIDDEN);
+}
+
+void open_timeedit_clock(void) {
+    timeedit_mode  = TIMEEDIT_MODE_CLOCK;
+    timeedit_ampm  = (hour_ >= 12) ? 1 : 0;
+    timeedit_hour  = hour_ % 12;
+    if (timeedit_hour == 0) timeedit_hour = 12;
+    timeedit_min   = minute_;
+    timeedit_day   = day_;
+    timeedit_month = month_;
+    timeedit_year  = year_;
+    timeedit_field = 0;
+
+    lv_label_set_text_fmt(te_hour_label, "%02d", timeedit_hour);
+    lv_label_set_text_fmt(te_min_label,  "%02d", timeedit_min);
+    lv_label_set_text_fmt(te_day_label,  "%02d", timeedit_day);
+    lv_label_set_text_fmt(te_mon_label,  "%02d", timeedit_month);
+    lv_label_set_text_fmt(te_year_label, "%04d", timeedit_year);
+    lv_label_set_text(te_ampm_label, timeedit_ampm ? "\331\205" : "\330\265");
+    lv_label_set_text(te_title_label,
+        "\330\266\330\250\330\267 \330\247\331\204\331\210\331\202\330\252");
+
+    show_date_row(true);
+    update_timeedit_highlight();
+    push_modal(scr_timeedit);
+}
+
+void open_timeedit_reminder(int idx) {
+    timeedit_mode          = TIMEEDIT_MODE_REMINDER;
+    timeedit_reminder_idx  = idx;
+    timeedit_ampm  = (reminders[idx].hour >= 12) ? 1 : 0;
+    timeedit_hour  = reminders[idx].hour % 12;
+    if (timeedit_hour == 0) timeedit_hour = 12;
+    timeedit_min   = reminders[idx].minute;
+    timeedit_days  = reminders[idx].days;
+    timeedit_field = 0;
+
+    lv_label_set_text_fmt(te_hour_label, "%02d", timeedit_hour);
+    lv_label_set_text_fmt(te_min_label,  "%02d", timeedit_min);
+    lv_label_set_text(te_ampm_label, timeedit_ampm ? "\331\205" : "\330\265");
+    lv_label_set_text(te_title_label, reminders[idx].label);
+
+    for (int d = 0; d < 7; d++) {
+        bool on = timeedit_days & (1 << d);
+        lv_obj_set_style_bg_color(te_day_toggles[d], on ? color_teal : color_surface, 0);
+    }
+
+    show_date_row(false);
+    update_timeedit_highlight();
+    push_modal(scr_timeedit);
 }

@@ -31,7 +31,9 @@ LVGL v9, TFT_eSPI, and the Waveshare ESP32-S3-Touch-LCD-1.28 round display.
 **Swipe arrows** (`◂` / `▸`) at screen edges indicate more screens (static — the
 sway animation was removed in V1.21: it forced full-rate redraws forever and
 measured ~10% of screen-on battery draw).
-**Modals:** Settings (tap gear or swipe-down from home), TimeEdit (long-press clock) — swipe down or left to dismiss.
+**Modals:** Settings (tap gear or swipe-down from home) → Change time / Notifications
+entries inside it — swipe down or left to dismiss (Settings: tap the title to go back
+too; TimeEdit/Notifications: tap `<` or the title).
 
 ### Screen accent colors
 
@@ -43,8 +45,16 @@ measured ~10% of screen-on battery draw).
 
 ### Gesture Map
 
-- **Ring screens**: Swipe L/R = navigate ring, swipe **down** (home only) = settings, **long-press** clock = time edit
-- **Modals**: Swipe down = back, swipe **left** = back (timeedit: tap `<` or title also goes back)
+- **Ring screens**: Swipe L/R = navigate ring, swipe **down** (home only) = settings
+- **Settings**: tap **تغيير الوقت** = time edit, tap **الإشعارات** = notifications list,
+  tap title or `< رجوع` = back (long-press-the-clock was removed — Settings is now
+  the only way in, see Reminders / Notifications below)
+- **Modals**: Swipe down = back, swipe **left** = back (Settings/TimeEdit/Notifications:
+  tap the title bar also goes back — Settings no longer dismisses on a random
+  background tap, only the title, since that was misfiring when tapping an option
+  near its edge)
+- **Notifications list**: tap a row = edit its time/days, tap its switch = toggle
+  enabled without navigating
 - **Tasbeeh/Istighfar**: Tap anywhere = increment counter
 
 ---
@@ -56,7 +66,8 @@ src/
 ├── main.cpp                      # Hardware init, LVGL setup, timers, loop, battery
 ├── config/
 │   ├── CST816S_pin_config.h      # Touch I2C pin definitions
-│   └── lv_conf.h                 # LVGL v9 build configuration
+│   ├── lv_conf.h                 # LVGL v9 build configuration
+│   └── reminders_config.h        # Reminder presets table — edit here to add/remove/rename notifications
 ├── ui/
 │   ├── screens.h                 # Public API — screen pointers, nav, fonts, helpers
 │   ├── screens.cpp               # Global pointers + screens_init()
@@ -66,8 +77,9 @@ src/
 │   ├── screen_home.cpp           # Clock screen: 12h stacked time + AM/PM, day, date, seconds arc, swipe arrows
 │   ├── screen_istighfar.cpp      # Istighfar counter: tap to count, 0→100 green arc
 │   ├── screen_tasbeeh.cpp        # Tasbeeh counter: 3 phrases × 33, blue arc, progress dots, phrase persists across boot
-│   ├── screen_settings.cpp       # Settings (currently empty — title + back button)
-│   └── screen_timeedit.cpp       # 12h time editor: HH:MM AM/PM, DD/MM/YYYY, validation, back arrow
+│   ├── screen_settings.cpp       # Settings: تغيير الوقت + الإشعارات entries, title-tap back
+│   ├── screen_timeedit.cpp       # 12h time editor — dual mode: system clock (HH:MM AM/PM, DD/MM/YYYY) or a reminder (HH:MM AM/PM + day-of-week toggles)
+│   └── screen_notifications.cpp  # Scrollable list of reminder presets — enable switch + tap-to-edit
 ├── font_reem_kufi_72.c           # Clock digits — Reem Kufi 72px 4bpp
 ├── font_reem_kufi_48.c           # Counter digits — Reem Kufi 48px 4bpp
 ├── font_alexandria_12.c          # Small labels, AM/PM — Alexandria 12px 2bpp
@@ -254,18 +266,29 @@ swipe-right = previous (MOVE_RIGHT animation).
 ### Modal (overlay, swipe-down/left to dismiss)
 
 ```
-   ┌──────────┐                ┌──────────────┐
-   │ SETTINGS │ ← gear / ↓     │ TIMEEDIT     │ ← long-press clock
-   │ swipe ↓  │                │ < swipe ↓/←  │
-   │ tap bg   │                │ tap < or title│
-   └──────────┘                └──────────────┘
+   ┌──────────┐   ┌───────────────┐   ┌──────────────┐
+   │ SETTINGS │──►│ NOTIFICATIONS │──►│ TIMEEDIT     │
+   │ ← gear/↓ │   │ ← تغيير الوقت │   │ (reminder    │
+   │ tap title│   │ tap title/<   │   │  or clock    │
+   │ or < back│   │ swipe ↓/← back│   │  mode)       │
+   └──────────┘   └───────────────┘   │ tap </title  │
+        │                             │ swipe ↓/← back│
+        └────────────────────────────►└──────────────┘
+              تغيير الوقت (clock mode)
 ```
 
 `push_modal(dest)` remembers the current screen, slides modal up.
-`pop_modal()` slides back down. Swipe-down, swipe-left, or back arrow dismiss.
+`pop_modal()` slides back down. Swipe-down, swipe-left, or the header bar dismiss.
+Since `pop_modal()` just returns to whichever screen was active when it was pushed,
+this chains correctly to any depth — Settings → Notifications → TimeEdit → back →
+back → back all land where you'd expect.
 
-TimeEdit no longer has background-tap-to-dismiss — user must tap the back arrow `<`
-or title to cancel.
+Settings no longer dismisses on a random background tap (that was misfiring when a
+tap near — but not quite on — an option button registered as "go back" instead);
+only its title is a back target now. TimeEdit and Notifications both dismiss on a
+background tap still, and on tapping their header (back arrow `<` or title) — that
+header's *whole* row is now the click target, not just the tight glyph bounds of
+the `<`/title text, which were too small to reliably hit.
 
 ### Safe event handling
 
@@ -312,7 +335,7 @@ Current: **RAM 60.4%** (198KB / 328KB), **Flash ~24%** (753KB / 3.1MB).
 
 ---
 
-## Power Management (V1 → V1.31)
+## Power Management (V1 → V1.32)
 
 Measured with the dual-port INA226 profiler in `scripts/power_profiler/`
 (fuses current samples with firmware `[SCREEN_ON]` / `[SCREEN_OFF]` / `[WAKE]`
@@ -360,6 +383,7 @@ manufacturer/listing states.**
 | V1.23 | Bug fix: CPU now starts at 80MHz at boot (was defaulting to 240MHz until the first sleep/wake cycle) | — | — | — |
 | V1.3 | Real light sleep (`esp_light_sleep_start`), GPIO wake polarity fix | **Screen off (asleep)** | ~576 min / 9.6h *(calc, 48mAh÷5mA)* | **~5 mA** |
 | V1.31 | Wake-timer interval 2s→60s, onboard IMU powered down | **Screen off (asleep)** | ~600 min / 10h *(calc, 48mAh÷4.8mA)* | **~4.8 mA** |
+| V1.32 | Touch wake latency: skip hardware reset on wake, shrink DISPON defer | **Screen off (asleep)** | not yet measured | not yet measured |
 
 *(V1.22/V1.3/V1.31 durations are calculated from the 48 mAh figure above, not
 measured directly — those tests weren't run to full depletion.)*
@@ -426,8 +450,28 @@ What each version changed:
   mistaken for a real touch. The wake-from-sleep path itself is now the
   hardware GPIO-wake mechanism above, not a software interrupt.
 - **Wake race fix (V1.21)** — inactivity is reset immediately on wake and
-  `screen_sleep_cb` is blocked during the 120 ms deferred backlight window,
+  `screen_sleep_cb` is blocked during the deferred backlight window,
   otherwise the panel could re-sleep mid-wake leaving a lit black screen.
+  This guard is independent of how long that window actually is, which
+  mattered for the next item.
+- **Touch wake latency (V1.32)** — `wake_display()` used to call
+  `touch.begin()` on every wake, which runs the CST816S library's full
+  hardware reset sequence (`delay(50)+delay(5)+delay(50)`, ~110ms) plus two
+  I2C reads, on every single touch wake. That reset is redundant: per the
+  CST816S datasheet, Standby mode autonomously returns to Dynamic mode the
+  moment it detects the touch that woke us in the first place — no reset
+  needed, and the chip was already freshly reset moments earlier anyway
+  (inside `touch.sleep()`'s own reset pulse when going *to* sleep). Patched
+  the vendored library (see Known Patches below) to add a `rearm()` method
+  that just reattaches the interrupt, skipping the reset entirely. Also
+  shrank the DISPON/backlight defer from 120ms to 20ms
+  (`WAKE_DISPON_DELAY_MS`) after re-reading the GC9A01A datasheet: the
+  120ms figure actually governs a different restriction (minimum dwell
+  time before flipping back into the opposite sleep state — our 15s
+  `SLEEP_TIMEOUT_MS` is nowhere near that limit anyway), not how soon
+  `DISPON` can follow `SLPOUT`, which only requires 5ms. Combined, touch-to-visible
+  latency should drop from ~240ms+ to well under 100ms — not yet measured
+  on hardware.
 - **IMU power-down (V1.31)** — the onboard QMI8658A (accel+gyro, address `0x6B`,
   SA0 grounded) is never used by this firmware, so it was left sitting in
   its power-on-reset default state indefinitely: per its datasheet
@@ -445,6 +489,131 @@ Not yet done (known next steps): brightness setting in the settings screen,
 and a physical vibration motor (driver circuit designed — low-side
 N-channel MOSFET + flyback diode off a free `GPIO_OUT` header pin — not yet
 installed).
+
+The V1.4 reminders/notifications feature below doesn't touch any of the sleep,
+CPU, or IMU paths above, so it isn't expected to move these numbers — not
+independently re-measured after adding it, though.
+
+---
+
+## Reminders / Notifications (V1.4)
+
+A settings sub-page listing preset daily reminders (this is a children's watch —
+routine nudges like "drink water" or "bedtime", not prayer times) that can each be
+individually enabled, retimed, and set to repeat on chosen days of the week.
+**Implemented and builds clean; not yet verified on hardware.**
+
+### Data model — `main.cpp`
+
+```cpp
+struct Reminder {
+    int  hour, minute;
+    char label[32];
+    bool enabled;
+    uint8_t days;   // bitmask, bit0=Sun .. bit6=Sat. 0x7F = every day.
+};
+```
+
+`weekday_from_date()` (Sakamoto's algorithm) derives day-of-week from
+`day_/month_/year_` — nothing previously tracked that, only the calendar date.
+`checkReminders()` now also requires `(reminders[i].days >> today) & 1` before
+firing.
+
+**A light-sleep interaction bug found while wiring this up:** `checkReminders()`
+used to also require `second_ == 0` to fire. That's harmless while awake (the 1Hz
+clock timer guarantees it's checked exactly at `:00`), but while the screen is
+asleep, `checkReminders()` only runs at sparse wake events — a touch, or every
+`SLEEP_WAKE_INTERVAL_US` (60s) — which are essentially never phase-aligned to an
+exact second. A reminder could go the entire time the watch was asleep (which is
+most of the time, by design) without its firing instant ever landing on `second_
+== 0`, so it would silently never fire. Fixed by dropping that check — the
+existing `reminderFired[]` edge-flag already dedups correctly (fires once on
+entering the target minute, resets once the minute passes) regardless of *when*
+within the minute it's observed, so it doesn't need the exact-second gate. Worst-case
+firing latency while asleep is now bounded by the 60s wake cadence, which is fine
+for routine reminders — deliberately didn't tighten that interval, since it exists
+to bound RC-oscillator drift (see Power Management above) and tightening it would
+cost the battery life the rest of this project has been optimizing for.
+
+### Preset table — `config/reminders_config.h`
+
+The **only place** to edit to change what shows up on the notifications screen:
+
+```cpp
+static const ReminderPreset REMINDER_PRESETS[] = {
+    {"شرب الماء",       10, 0},  // drink water
+    {"غسل اليدين",      12, 0},  // wash hands
+    {"وقت الواجب",      17, 0},  // homework time
+    {"تنظيف الأسنان",    20, 0},  // brush teeth
+    {"وقت النوم",       21, 0},  // bedtime
+};
+```
+
+Rename, retime, add, or delete rows freely (capped at `MAX_REMINDERS` = 10 in
+`screens.h` — a `static_assert` fails the build if exceeded), then bump
+`REMINDER_PRESET_VERSION` by 1 and reflash — that version bump is what tells the
+watch to re-sync from the table; without it, a device that's already been
+flashed once keeps whatever it already saved in NVS and won't notice the table
+changed. On a version bump, a preset still present at the same position keeps
+whatever time/enabled/days you'd already set *on the watch* — only its label
+text always refreshes (so renames take effect), and only genuinely new rows get
+the table's default hour/minute. Rows removed from the table get cleared out.
+`screen_notifications.cpp`'s row count comes directly from this table
+(`REMINDER_PRESET_COUNT`), so nothing else needs updating to add or remove one.
+
+### UI — `screen_notifications.cpp` + `screen_timeedit.cpp` (reused)
+
+```
+       <  الإشعارات
+
+   ┌──────────────────────┐
+   │ شرب الماء     10:00 ○│
+   │ غسل اليدين    12:00 ○│  ← scrollable —
+   │ وقت الواجب    17:00 ●│    5 rows don't fit
+   │ تنظيف الأسنان  20:00 ○│    statically in the
+   │ وقت النوم     21:00 ○│    round safe area
+   └──────────────────────┘
+```
+
+Tapping a row's switch toggles it on/off in place (no navigation). Tapping
+anywhere else on the row opens the time editor for that reminder. Rather than
+build a second time-picker screen, `screen_timeedit.cpp` gained a
+`TIMEEDIT_MODE_REMINDER` mode alongside its original `TIMEEDIT_MODE_CLOCK`:
+
+- **Clock mode** (`open_timeedit_clock()`): unchanged — HH:MM AM/PM + DD/MM/YYYY,
+  writes to the system clock.
+- **Reminder mode** (`open_timeedit_reminder(idx)`): same HH:MM AM/PM fields,
+  but the date row is hidden and replaced with 7 day-of-week toggle circles
+  (ح ن ث ر خ ج س — Sun..Sat), and Save writes into `reminders[idx]` instead.
+
+The screen is built once at boot and reused (like every other modal here), so
+these two entry points populate all the labels/toggle states and show/hide the
+right row before `push_modal()` — centralizing that logic instead of duplicating
+it in every caller like the old clock-only version did.
+
+### Settings screen changes
+
+Long-press-the-clock (the old way into the time editor) was removed entirely —
+Settings now has two explicit entries instead: **تغيير الوقت** (change time) and
+**الإشعارات** (notifications), both reusing `open_timeedit_*()`/`push_modal()`.
+
+### Hitbox tuning
+
+Two rounds of "my tap didn't do what I expected" fixes, both via
+`lv_obj_set_ext_click_area()` (extends the *hit-test* region without changing
+layout or appearance):
+
+- **Header bars** (Settings title, TimeEdit/Notifications `<`+title): these were
+  individually-clickable labels, so the tappable area was only the tight glyph
+  bounds of a single `<` character or a short title — easy to miss. Made the
+  whole header row the click target instead (plus a few px of extra margin),
+  on all three screens.
+- **Notification row switches**: at their native 38×20 size, taps meant for the
+  switch were landing on the row instead (opening the time editor by mistake).
+  Extended the switch's hit area by 8px on each side — capped there deliberately:
+  rows are only 40px apart center-to-center (34px row + 6px gap), so anything
+  bigger would make adjacent rows' switches overlap and risk toggling the wrong
+  reminder, which is worse than the mis-tap being fixed.
 
 ---
 
@@ -466,6 +635,9 @@ installed).
 
 ## TimeEdit — 12-Hour with AM/PM
 
+This is clock mode specifically (system time). The same screen also has a
+reminder-editing mode now — see Reminders / Notifications above.
+
 ```
        <  ضبط الوقت
 
@@ -482,7 +654,7 @@ installed).
 - 24h↔12h conversion on open/save
 - Active field highlighted teal with inverted text
 - Per-field validation (hour 1–12, minute 0–59, day 1–31, month 1–12, year 2024–2099)
-- Back arrow `<` + title tap dismisses without saving
+- Header bar (back arrow `<` + title, whole row clickable) dismisses without saving
 - Layout respects circular display chord limits
 
 ---
@@ -507,7 +679,7 @@ Key settings in `src/config/lv_conf.h`:
 #define LV_USE_PERF_MONITOR 0
 ```
 
-## Known Patches to LVGL Library
+## Known Patches to Vendored Libraries
 
 **`lv_text_ap.c:212`** — Arabic shaper: when a character has no conjunction in either
 direction (standalone), keep the original base-form character instead of converting
@@ -521,6 +693,21 @@ in the Alexandria font. Path:
 **`font_alexandria_28.c`** / **`font_alexandria_12.c`** — `glyph_id_ofs_list_7`:
 Entries for U+FEB9 (index 57) and U+FEE1 (index 97) changed from `0` to match
 their final-form counterparts (`44` and `74`), pointing to glyph_ids 318 and 348.
+
+**`CST816S.h`/`CST816S.cpp`** — added a `rearm(int interrupt = RISING)` method:
+just re-attaches the touch IRQ interrupt, without `begin()`'s hardware reset
+sequence (`delay(50)+delay(5)+delay(50)`, ~110ms) or its two I2C version
+reads. Used in `wake_display()` instead of `begin()` — added for the V1.32
+wake-latency work, see Power Management below. Path:
+
+```
+.pio/libdeps/waveshare_esp32s3_touch_lcd_128/CST816S/CST816S.h
+.pio/libdeps/waveshare_esp32s3_touch_lcd_128/CST816S/CST816S.cpp
+```
+
+**Note:** all patches above live in `.pio/libdeps/`, which PlatformIO can
+regenerate from the pinned version in `platformio.ini` on a clean install —
+if that happens, these need to be reapplied by hand from the descriptions above.
 
 ---
 
