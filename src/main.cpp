@@ -23,8 +23,10 @@ static void my_disp_flush_dma(lv_display_t *disp, const lv_area_t *area, uint8_t
 #endif
 #include <Preferences.h>
 #include <time.h>
+#include <sys/time.h>
 #include <math.h>
 #include "esp_sleep.h"
+#include "esp_system.h"
 #include "driver/gpio.h"
 
 #include "config/CST816S_pin_config.h"
@@ -91,6 +93,42 @@ static bool display_sleeping = false;
 // https://esp32.com/viewtopic.php?t=35490
 // https://medium.com/@raypcb/a-complete-guide-to-checking-rtc-accuracy-on-the-esp32-3f83a5c70ec7
 #define SLEEP_WAKE_INTERVAL_US (60ULL * 1000 * 1000)
+
+// Deep-sleep test: DEEP_SLEEP_TEST_ENABLED itself lives in screens.h (shared
+// with screen_settings.cpp, which triggers it). Auto-wake after this long
+// even if never touched, so a test run can't get stuck — also wakes
+// immediately on touch (same TOUCH_IRQ pin, EXT0).
+#define DEEP_SLEEP_TEST_DURATION_US (5ULL * 60 * 1000 * 1000)
+
+// ── Battery lockdown (<5%) ─────────────────────────────────────
+// This board has no hardware battery protection (checked the ETA6098
+// charger datasheet and this board's schematic: the charger has no
+// battery-side undervoltage disconnect, and the VBAT->VSYS path when
+// unplugged is a plain always-on P-FET with no protection logic at all) —
+// below this threshold, firmware is the only thing standing between normal
+// operation and running the cell down to a damaging voltage. Survives deep
+// sleep + the reboot it causes (the only case that matters here, since
+// normal operation never touches deep sleep at all).
+RTC_DATA_ATTR bool in_lockdown = false;
+// Set by enterLockdownTest() to force lockdown regardless of real battery %,
+// for bench testing. Only ever cleared by a genuine physical reset (not a
+// deep-sleep wake — those preserve RTC_DATA_ATTR on purpose).
+RTC_DATA_ATTR bool lockdown_test_forced = false;
+// Set from a long-press on the lockdown screen itself (screen_lockdown.cpp,
+// via requestLockdownTestExit()) — plain RAM, not RTC_DATA_ATTR, since it
+// only matters within the current boot's display-wait loop in setup().
+static bool lockdown_test_exit_requested = false;
+#define LOCKDOWN_ENTER_PCT   5
+#define LOCKDOWN_EXIT_PCT    10   // hysteresis — a jittery reading right at
+                                  // 5% can't flap the mode back and forth
+#define LOCKDOWN_BL_DUTY     8   // ~3% — legible, backlight is the dominant
+                                  // screen-on power cost (85mA@100% vs
+                                  // 52mA@27%, measured — see README)
+#define LOCKDOWN_RECHECK_US  (5ULL * 60 * 1000 * 1000)  // silent battery
+                                  // recheck cadence while locked down
+#define LOCKDOWN_DISPLAY_MS  4000  // much shorter than the normal
+                                  // SLEEP_TIMEOUT_MS (15s) — there's nothing
+                                  // to read here but one short message
 
 // Backlight PWM (replaces plain digitalWrite on/off)
 #define BL_PWM_FREQ_HZ 5000
@@ -174,6 +212,38 @@ static void loadTime() {
     day_    = prefs.getInt("day", 1);
     month_  = prefs.getInt("month", 1);
     year_   = prefs.getInt("year", 2026);
+}
+
+// ESP-IDF's RTC-timer-backed system clock (gettimeofday()/settimeofday())
+// is documented to keep running correctly across deep sleep, unlike
+// esp_timer_get_time()/millis() (which the rest of this app's clock is
+// built on) — that one explicitly resets to 0 on deep-sleep wake. These two
+// helpers exercise that path — used by deepSleepUntil() below (battery
+// lockdown, and the deep-sleep bench test), not by the normal light-sleep
+// clock at all.
+static void wallClockToSystemTime() {
+    struct tm t = {};
+    t.tm_year = year_ - 1900;
+    t.tm_mon  = month_ - 1;
+    t.tm_mday = day_;
+    t.tm_hour = hour_;
+    t.tm_min  = minute_;
+    t.tm_sec  = second_;
+    struct timeval tv = { .tv_sec = mktime(&t), .tv_usec = 0 };
+    settimeofday(&tv, NULL);
+}
+
+static void systemTimeToWallClock() {
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    struct tm t;
+    localtime_r(&tv.tv_sec, &t);
+    year_   = t.tm_year + 1900;
+    month_  = t.tm_mon + 1;
+    day_    = t.tm_mday;
+    hour_   = t.tm_hour;
+    minute_ = t.tm_min;
+    second_ = t.tm_sec;
 }
 
 void saveReminders() {
@@ -444,6 +514,89 @@ static void screen_sleep_cb(lv_timer_t *t) {
 }
 
 // ══════════════════════════════════════════════════════════════
+//  Deep sleep entry — shared by the bench test and battery lockdown below.
+//
+//  Wake sources: touch (EXT0 on TOUCH_IRQ, LOW level — same polarity light
+//  sleep needed on real hardware, main.cpp sleep_display()) or the given
+//  timer duration, whichever comes first. Pressing the physical RESET
+//  button always works too, regardless of deep sleep state.
+//
+//  esp_deep_sleep_start() never returns — waking from it is a full reset,
+//  back through setup() from the top.
+// ══════════════════════════════════════════════════════════════
+static void deepSleepUntil(uint64_t timer_wake_us) {
+    ledcWrite(TFT_BL, BL_DUTY_OFF);
+    // Paint solid black directly (bypassing LVGL) right before sleeping, so
+    // whatever's in GRAM going into deep sleep is neutral, not whatever
+    // screen was active (e.g. Settings) — confirmed this was the source of
+    // an earlier "shows Settings on wake" bug.
+    tft.fillScreen(TFT_BLACK);
+    tft.writecommand(0x10);          // TFT_SLPIN
+
+    // Between physical wake and the first line of the sketch (ROM
+    // bootloader + 2nd-stage boot), GPIO2 is outside any of our code's
+    // control — nothing in setup() can reach that window. gpio_hold_en()
+    // latches its output level through deep sleep *and* that whole boot
+    // window, until we explicitly release it ourselves early in setup().
+    ledcDetach(TFT_BL);              // release from the PWM peripheral first —
+    pinMode(TFT_BL, OUTPUT);         // hold latches a plain digital level,
+    digitalWrite(TFT_BL, LOW);       // not "mid PWM cycle"
+    gpio_hold_en((gpio_num_t)TFT_BL);
+#if !SOC_GPIO_SUPPORT_HOLD_SINGLE_IO_IN_DSLP
+    gpio_deep_sleep_hold_en();
+#endif
+
+    detachInterrupt(TOUCH_IRQ);      // same reset-glitch guard as sleep_display()
+    touch.sleep();
+    touch.available();
+
+    esp_sleep_enable_ext0_wakeup((gpio_num_t)TOUCH_IRQ, 0);
+    esp_sleep_enable_timer_wakeup(timer_wake_us);
+
+    Serial.flush();
+    esp_deep_sleep_start();
+}
+
+#if DEEP_SLEEP_TEST_ENABLED
+// Bench tool — triggered by long-pressing the Settings screen's back button
+// (deliberately not a normal-looking button — shouldn't be reachable by a
+// casual/accidental tap). See the "option 2" power investigation: does
+// esp_deep_sleep_start() actually draw less than the ~4.8mA already
+// measured for real light sleep on this whole board?
+void enterDeepSleepTest() {
+    Serial.println("[DEEPSLEEP_TEST] entering — wake on touch, or after "
+                    "DEEP_SLEEP_TEST_DURATION_US");
+    saveTime();              // NVS checkpoint — fallback if the RTC-time
+                              // path doesn't survive as expected
+    wallClockToSystemTime(); // what this test is actually trying to verify
+    deepSleepUntil(DEEP_SLEEP_TEST_DURATION_US);
+}
+#endif
+
+#if LOCKDOWN_TEST_ENABLED
+// Bench tool — triggered by long-pressing the Settings screen's back button
+// (same "not a normal-looking button" reasoning as enterDeepSleepTest()).
+// Forces in_lockdown regardless of real battery %, then goes to sleep
+// immediately — the *next* wake (touch or the lockdown recheck timer) lands
+// straight in setup()'s real in_lockdown==true path, exercising the actual
+// lockdown code, not a separate mock of it.
+void enterLockdownTest() {
+    Serial.println("[LOCKDOWN_TEST] forcing lockdown for testing");
+    lockdown_test_forced = true;
+    in_lockdown = true;
+    saveTime();
+    wallClockToSystemTime();
+    deepSleepUntil(LOCKDOWN_RECHECK_US);
+}
+
+void requestLockdownTestExit() {
+    if (!lockdown_test_forced) return;   // real lockdown — no escape from a touch
+    Serial.println("[LOCKDOWN_TEST] exit requested");
+    lockdown_test_exit_requested = true;
+}
+#endif
+
+// ══════════════════════════════════════════════════════════════
 //  Display
 // ══════════════════════════════════════════════════════════════
 
@@ -472,6 +625,12 @@ void my_touchpad_read(lv_indev_t *indev, lv_indev_data_t *data) {
         data->state = LV_INDEV_STATE_PRESSED;
         data->point.x = 240 - touch.data.x;
         data->point.y = 240 - touch.data.y;
+#if DEEP_SLEEP_TEST_ENABLED
+        if (millis() < 3000) {   // only right after boot — is a touch already
+            Serial.printf("[BOOT] touch press at (%d,%d) t=%lums\n",
+                data->point.x, data->point.y, millis());
+        }
+#endif
     }
 }
 
@@ -480,9 +639,29 @@ static uint32_t my_tick(void) {
 }
 
 void setup() {
+    // Absolute first thing, before anything else touches this pin. If we
+    // came from enterDeepSleepTest(), GPIO2 is still gpio_hold_en()-latched
+    // LOW all the way from before sleep through the ROM bootloader and up to
+    // this exact line — release it before reconfiguring, otherwise the hold
+    // just overrides whatever pinMode()/digitalWrite() below try to do.
+    // Harmless no-op if the hold was never engaged (e.g. a normal power-on
+    // boot, not a deep-sleep wake).
+    gpio_hold_dis((gpio_num_t)TFT_BL);
+#if !SOC_GPIO_SUPPORT_HOLD_SINGLE_IO_IN_DSLP
+    gpio_deep_sleep_hold_dis();
+#endif
+
+    // tft.begin() alone takes 140ms+ (its own internal SLPOUT+delay(120)+
+    // DISPON+delay(20)) — drive the backlight LOW ourselves before any of
+    // that runs, rather than leaving GPIO2 uncontrolled for that window.
+    pinMode(TFT_BL, OUTPUT);
+    digitalWrite(TFT_BL, LOW);
+
     Serial.begin(115200);
     delay(500);
     Serial.println("\n\n=== BOOT START ===");
+    Serial.printf("[BOOT] reset_reason=%d wakeup_cause=%d\n",
+        (int)esp_reset_reason(), (int)esp_sleep_get_wakeup_cause());
 
     setCpuFrequencyMhz(AWAKE_CPU_MHZ);  // otherwise boot stays at the default clock until the first sleep/wake cycle
 
@@ -495,6 +674,15 @@ void setup() {
     analogReadResolution(12);
     analogSetPinAttenuation(BAT_ADC, ADC_11db);
 
+    int battPct = getBatteryPercent();
+    if (lockdown_test_forced) {
+        in_lockdown = true;   // ignore real battery entirely while under test
+    } else {
+        if (!in_lockdown && battPct < LOCKDOWN_ENTER_PCT) in_lockdown = true;
+        else if (in_lockdown && battPct >= LOCKDOWN_EXIT_PCT) in_lockdown = false;
+    }
+    Serial.printf("[BATT] pct=%d in_lockdown=%d forced=%d\n", battPct, in_lockdown, lockdown_test_forced);
+
     Serial.println("[2] prefs.begin...");
     prefs.begin("watch", false);
     tasbeehCount      = prefs.getUInt("tasbeeh", 0);
@@ -505,6 +693,22 @@ void setup() {
     loadReminders();
     syncReminderPresets();
     loadTime();
+
+    // Any deep-sleep-originated wake (bench test or battery lockdown below)
+    // gets its wall clock restored from the RTC-backed system time instead
+    // of the (possibly stale) NVS checkpoint — confirmed correct on real
+    // hardware this session (logged NVS-vs-RTC values matched).
+    esp_sleep_wakeup_cause_t wake_cause = esp_sleep_get_wakeup_cause();
+    bool woke_from_deep_sleep = (wake_cause == ESP_SLEEP_WAKEUP_TIMER || wake_cause == ESP_SLEEP_WAKEUP_EXT0);
+    if (woke_from_deep_sleep) {
+        int nvs_h = hour_, nvs_m = minute_, nvs_d = day_;
+        systemTimeToWallClock();
+        Serial.printf("[BOOT] woke from deep sleep, cause=%s\n",
+            wake_cause == ESP_SLEEP_WAKEUP_TIMER ? "TIMER" : "TOUCH(EXT0)");
+        Serial.printf("[BOOT] NVS said %02d:%02d day %d — RTC/gettimeofday says %02d:%02d day %d\n",
+            nvs_h, nvs_m, nvs_d, hour_, minute_, day_);
+    }
+
     last_clock_ms = millis();
     prefs.putInt("popup_idx", -1);  // clear any stale popup from previous crash
     Serial.println("[2] OK");
@@ -526,8 +730,25 @@ void setup() {
     tft.begin();
     tft.setRotation(TFT_ROTATION);
     tft.fillScreen(TFT_BLACK);
+    // TFT_BL was already forced LOW at the very top of setup() (see there for
+    // why). Arduino-ESP32's ledcAttach() reads the channel's *current* duty
+    // via ledc_get_duty() and feeds it back in as the pin's initial duty —
+    // on a channel that's never been configured before, i.e. an unreliable
+    // read (Espressif's own issue tracker flags this exact pattern:
+    // espressif/arduino-esp32#11373 — "the impact of duty being invalid...
+    // is unclear") — so pin it down explicitly again right before attaching,
+    // no gap between the two.
+    digitalWrite(TFT_BL, LOW);
     ledcAttach(TFT_BL, BL_PWM_FREQ_HZ, BL_PWM_RES_BITS);
-    ledcWrite(TFT_BL, BL_DUTY_ON);
+    ledcWrite(TFT_BL, BL_DUTY_OFF);   // stay dark until scr_home is actually on screen —
+                                      // same reasoning as WAKE_DISPON_DELAY_MS below: turning
+                                      // the backlight on this early lights up whatever's in
+                                      // GRAM through the entire lv_init/theme/styles/screens_init
+                                      // sequence (screens_init() builds all 6 screens' widget
+                                      // trees before scr_home is ever loaded), which is exactly
+                                      // the visible glitch on every deep-sleep wake (a full
+                                      // reboot through setup(), unlike light sleep's instant
+                                      // resume that never re-runs any of this)
     disp = lv_display_create(TFT_HOR_RES, TFT_VER_RES);
     lv_display_set_flush_cb(disp, my_disp_flush_dma);
     lv_display_set_rotation(disp, TFT_ROTATION);
@@ -565,14 +786,112 @@ void setup() {
     ui_styles_init();
     Serial.println("[7] OK");
 
+    if (in_lockdown) {
+        // Battery <5%: skip the whole normal UI (screens_init() builds 6
+        // screens' worth of widgets we won't use), show only the lockdown
+        // message, and go straight back to deep sleep. A TIMER wake is the
+        // silent recheck — nobody's there to see it, so if we're still
+        // under the recovery threshold, don't even render/light the screen.
+        bool silent_recheck = (wake_cause == ESP_SLEEP_WAKEUP_TIMER);
+        Serial.printf("[LOCKDOWN] silent_recheck=%d\n", silent_recheck);
+        if (!silent_recheck) {
+            create_screen_lockdown();
+            lv_screen_load(scr_lockdown);
+            // Same half-screen-double-buffer reasoning as the normal path
+            // below — a few passes guarantees the whole frame is flushed
+            // before anything lights it up.
+            for (int i = 0; i < 4; i++) {
+                lv_timer_handler();
+                delay(20);
+            }
+            const int FADE_STEPS = 24;
+            for (int i = 1; i <= FADE_STEPS; i++) {
+                float t = (float)i / FADE_STEPS;
+                int duty = (int)(LOCKDOWN_BL_DUTY * powf(t, 2.2f) + 0.5f);
+                ledcWrite(TFT_BL, duty);
+                delay(6);
+            }
+            ledcWrite(TFT_BL, LOCKDOWN_BL_DUTY);
+
+            uint32_t shown_at = millis();
+            while (millis() - shown_at < LOCKDOWN_DISPLAY_MS && !lockdown_test_exit_requested) {
+                lv_timer_handler();
+                delay(20);
+            }
+        }
+        if (lockdown_test_exit_requested) {
+            // Test-only escape (requestLockdownTestExit() already refused to
+            // set this unless lockdown_test_forced was true) — clear the
+            // state and fall through into the normal boot path below instead
+            // of going back to sleep.
+            Serial.println("[LOCKDOWN_TEST] exiting — resuming normal boot");
+            in_lockdown = false;
+            lockdown_test_forced = false;
+        } else {
+            Serial.println("[LOCKDOWN] returning to deep sleep");
+            saveTime();
+            // Only re-seed the RTC-backed system clock if it was never
+            // seeded to begin with (a genuine cold boot straight into
+            // lockdown). If we woke from a *previous* deep sleep cycle,
+            // hour_/minute_/second_ were already read from that
+            // continuously-ticking clock at the top of setup() and haven't
+            // been touched since — writing them back here would overwrite
+            // the still-accurate system clock with a now-stale snapshot,
+            // silently discarding however long this boot took to run
+            // (touch.begin(), ADC reads, up to LOCKDOWN_DISPLAY_MS on
+            // screen) on every single cycle. That was the actual source of
+            // the accuracy regression versus light sleep — not the RTC
+            // hardware, this bug.
+            if (!woke_from_deep_sleep) wallClockToSystemTime();
+            deepSleepUntil(LOCKDOWN_RECHECK_US);
+            // unreachable — deepSleepUntil() never returns
+        }
+    }
+
     Serial.println("[8] screens_init...");
     screens_init();
     Serial.println("[8] OK");
+    Serial.printf("[BOOT] after screens_init: active=%p home=%p settings=%p t=%lums\n",
+        lv_screen_active(), scr_home, scr_settings, millis());
 
     update_home_clock();
     lv_screen_load(scr_home);
-    lv_timer_handler();
-    delay(100);
+    Serial.printf("[BOOT] after lv_screen_load(home): active=%p t=%lums\n",
+        lv_screen_active(), millis());
+    // draw_buf_1/2 are each only HALF the screen (LV_DISPLAY_RENDER_MODE_PARTIAL),
+    // so a full-screen invalidation like lv_screen_load() needs at least two
+    // flush passes (top half, bottom half) — one lv_timer_handler() call isn't
+    // reliably enough to guarantee both have gone out. If the backlight came on
+    // before the second half flushed, whatever was on the panel before this
+    // boot (e.g. the Settings screen, if that's what deep sleep was entered
+    // from — SLPIN doesn't clear GRAM) would still be showing in that half.
+    // A few passes leaves no doubt the whole frame is actually on the panel.
+    for (int i = 0; i < 4; i++) {
+        lv_timer_handler();
+        delay(20);
+    }
+    Serial.printf("[BOOT] before backlight-on: active=%p (home=%p) t=%lums\n",
+        lv_screen_active(), scr_home, millis());
+    // 500ms diagnostic delay tested and removed — made no difference, which
+    // rules out a settling/timing race (500ms is far more than a full-frame
+    // SPI transfer needs, ~23ms at 40MHz for 240x240x16bpp).
+    //
+    // Fade in gamma-corrected, not linear. LED brightness perception is
+    // roughly a power curve (~duty^2.2), so a *linear* duty ramp (0,7,14...)
+    // looks dark/flat for most of its steps and then jumps to full brightness
+    // in the last one or two — reported back as "better but still flashes".
+    // Ramping duty as step^2.2 instead spends more of the sequence at
+    // perceptually-low brightness, so it actually looks gradual. Only runs
+    // once per boot/deep-sleep-wake, not on light-sleep touch-wake (that
+    // path stays instant — V1.32 tuned it for sub-100ms latency).
+    const int FADE_STEPS = 24;
+    for (int i = 1; i <= FADE_STEPS; i++) {
+        float t = (float)i / FADE_STEPS;
+        int duty = (int)(BL_DUTY_ON * powf(t, 2.2f) + 0.5f);
+        ledcWrite(TFT_BL, duty);
+        delay(6);
+    }
+    ledcWrite(TFT_BL, BL_DUTY_ON);
 
     clock_timer_obj  = lv_timer_create(clock_timer_cb, 1000, NULL);
     battery_timer_obj = lv_timer_create(battery_timer_cb, 5000, NULL);

@@ -22,6 +22,33 @@ struct Reminder {
 extern Reminder reminders[MAX_REMINDERS];
 void saveReminders(void);
 
+// ── Deep-sleep test (bench measurement only — see main.cpp) ────
+// Single master switch: flip to 0 and reflash to remove this feature
+// completely — the trigger in screen_settings.cpp and its implementation
+// in main.cpp both compile out, nothing left running either side.
+// Currently OFF — kept in the codebase, not wired up while the Settings
+// back-button long-press is doing lockdown testing instead (see below).
+#define DEEP_SLEEP_TEST_ENABLED 0
+#if DEEP_SLEEP_TEST_ENABLED
+void enterDeepSleepTest(void);
+#endif
+
+// ── Battery lockdown test (bench tool — see main.cpp) ───────────
+// Same "disable at any time" pattern as DEEP_SLEEP_TEST_ENABLED above:
+// flip to 0 and reflash to remove entirely. Forces in_lockdown regardless
+// of real battery level, so it can be tested without actually running the
+// battery down — escape hatch is the physical RESET button (a real reset,
+// not a deep-sleep wake, reinitializes RTC_DATA_ATTR back to false), same
+// guarantee the deep-sleep test relied on.
+#define LOCKDOWN_TEST_ENABLED 1
+#if LOCKDOWN_TEST_ENABLED
+void enterLockdownTest(void);
+// Long-press anywhere on the lockdown screen to bail out early — only takes
+// effect if this lockdown was itself test-forced (enterLockdownTest()); a
+// real low-battery lockdown stays inescapable except by actually charging.
+void requestLockdownTestExit(void);
+#endif
+
 // Ring screens
 extern lv_obj_t *scr_home;
 extern lv_obj_t *scr_istighfar;
@@ -31,6 +58,11 @@ extern lv_obj_t *scr_tasbeeh;
 extern lv_obj_t *scr_settings;
 extern lv_obj_t *scr_timeedit;
 extern lv_obj_t *scr_notifications;
+
+// Battery lockdown screen (<5%) — deliberately outside the normal
+// navigation graph, see main.cpp and screen_lockdown.cpp.
+extern lv_obj_t *scr_lockdown;
+void create_screen_lockdown(void);
 
 // ── Home / Clock screen widgets ───────────────────────────────
 extern lv_obj_t *home_day_label;

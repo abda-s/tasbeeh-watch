@@ -20,6 +20,25 @@ static void settings_time_cb(lv_event_t *e) {
     open_timeedit_clock();
 }
 
+#if DEEP_SLEEP_TEST_ENABLED
+// Bench tool, not a real setting — deliberately triggered by a long-press
+// on the back button rather than its own labeled button, so it isn't
+// reachable by a casual/accidental tap. See main.cpp's enterDeepSleepTest().
+static void settings_deep_sleep_test_cb(lv_event_t *e) {
+    if (lv_screen_active() != scr_settings) return;
+    enterDeepSleepTest();
+}
+#endif
+
+#if LOCKDOWN_TEST_ENABLED
+// Bench tool, not a real setting — same reasoning as the deep-sleep test
+// above. See main.cpp's enterLockdownTest().
+static void settings_lockdown_test_cb(lv_event_t *e) {
+    if (lv_screen_active() != scr_settings) return;
+    enterLockdownTest();
+}
+#endif
+
 void create_screen_settings(void) {
     scr_settings = lv_obj_create(NULL);
     make_screen_base(scr_settings);
@@ -70,4 +89,9 @@ void create_screen_settings(void) {
     lv_label_set_text(back_lbl, "< \330\261\330\254\331\210\330\271");
     lv_obj_center(back_lbl);
     lv_obj_add_event_cb(back_btn, settings_back_cb, LV_EVENT_CLICKED, NULL);
+#if DEEP_SLEEP_TEST_ENABLED
+    lv_obj_add_event_cb(back_btn, settings_deep_sleep_test_cb, LV_EVENT_LONG_PRESSED, NULL);
+#elif LOCKDOWN_TEST_ENABLED
+    lv_obj_add_event_cb(back_btn, settings_lockdown_test_cb, LV_EVENT_LONG_PRESSED, NULL);
+#endif
 }
