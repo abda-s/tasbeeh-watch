@@ -336,7 +336,7 @@ Current: **RAM 60.4%** (198KB / 328KB), **Flash ~24%** (753KB / 3.1MB).
 
 ---
 
-## Power Management (V1 → V1.32)
+## Power Management (V1 → V1.5)
 
 Measured with the dual-port INA226 profiler in `scripts/power_profiler/`
 (fuses current samples with firmware `[SCREEN_ON]` / `[SCREEN_OFF]` / `[WAKE]`
@@ -384,10 +384,36 @@ manufacturer/listing states.**
 | V1.23 | Bug fix: CPU now starts at 80MHz at boot (was defaulting to 240MHz until the first sleep/wake cycle) | — | — | — |
 | V1.3 | Real light sleep (`esp_light_sleep_start`), GPIO wake polarity fix | **Screen off (asleep)** | ~576 min / 9.6h *(calc, 48mAh÷5mA)* | **~5 mA** |
 | V1.31 | Wake-timer interval 2s→60s, onboard IMU powered down | **Screen off (asleep)** | ~600 min / 10h *(calc, 48mAh÷4.8mA)* | **~4.8 mA** |
-| V1.32 | Touch wake latency: skip hardware reset on wake, shrink DISPON defer | **Screen off (asleep)** | not yet measured | not yet measured |
+| V1.32 | Touch wake latency: skip hardware reset on wake, shrink DISPON defer | **Screen off (asleep)** | not yet measured | **~1.9 mA** *(measured at V1.5, see note)* |
+| V1.5 | Deep sleep + battery lockdown added (separate mode, doesn't touch this path — see below) | Deep sleep (`<5%` lockdown / bench test) | — | **~0.6-0.8 mA**, whole board *(sensor-limited — see below)* |
 
 *(V1.22/V1.3/V1.31 durations are calculated from the 48 mAh figure above, not
 measured directly — those tests weren't run to full depletion.)*
+
+**On the V1.32 number**: V1.31's ~4.8 mA was the last independently-measured
+screen-off figure; V1.32's touch-wake-latency change (`wake_display()`
+skipping `touch.begin()`'s ~110 ms reset, `WAKE_DISPON_DELAY_MS` cut from
+120ms to 20ms) went in afterward but was never separately re-measured at the
+time (the table above literally said "not yet measured" for both columns).
+~1.9 mA is what a later measurement pass came back with. Diffed the actual
+code between the V1.31 commit and now to check what could explain it: the
+core light-sleep mechanism itself — `sleep_display()`, the
+`esp_light_sleep_start()` call, `SLEEP_WAKE_INTERVAL_US`, the GPIO wake
+source — is **byte-for-byte unchanged** since V1.31. The *only* functionally
+relevant change touching this path at all is that same V1.32 wake-latency
+work, which only affects the cost of an actual touch-wake event, not the
+passive current while dwelling in light sleep between wakes. Whether that
+alone accounts for the full 4.8→1.9 mA drop depends on whether the test that
+produced each number involved periodic touches or was a pure untouched-dwell
+measurement — that detail isn't confirmed, so this is documented as the only
+candidate mechanism found in the diff, not a verified root cause.
+
+**On the deep-sleep number**: unchanged from the dedicated bench-test
+measurement described below (~0.6-0.8 mA, whole board). A separate,
+lower-resolution measurement pass reported deep sleep reading almost 0 mA —
+that's the sensor's floor, not a real measurement of near-zero current
+(most current sensors lose accuracy well before true zero), so the ~0.6-0.8
+mA figure from the dedicated test remains the number to trust.
 
 What each version changed:
 
@@ -650,11 +676,15 @@ real architectural fork, not a parameter change, which is why lockdown mode
 below (built on deep sleep) needed its own boot path rather than a tweak to
 the existing light-sleep loop.
 
-Measured on this hardware: **~0.6-0.8mA whole-board** in deep sleep, vs.
-light sleep's ~4.8mA (V1.31/V1.32) — a real, large drop, though the datasheet's
-own chip-only deep-sleep figure (Table 4-8, ~7-8µA) is far lower still, so
-something else on the board (display panel/touch-controller quiescent draw,
-most likely) is the current floor now, not the ESP32-S3 itself.
+Measured on this hardware: **~0.6-0.8mA whole-board** in deep sleep, a real,
+large drop versus light sleep either way (~4.8 mA at V1.31, ~1.9 mA measured
+later — see the Power Management table above for what that later number
+does and doesn't explain). The datasheet's own chip-only deep-sleep figure
+(Table 4-8, ~7-8µA) is far lower still, so something else on the board
+(display panel/touch-controller quiescent draw, most likely) is the current
+floor now, not the ESP32-S3 itself. A separate, lower-resolution measurement
+pass read deep sleep as almost 0mA — that's the sensor's floor, not a real
+reading of near-zero current, so ~0.6-0.8mA remains the number to trust here.
 
 ### Keeping accurate time across deep sleep
 

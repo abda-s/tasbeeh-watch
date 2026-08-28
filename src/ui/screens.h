@@ -40,7 +40,9 @@ void enterDeepSleepTest(void);
 // battery down — escape hatch is the physical RESET button (a real reset,
 // not a deep-sleep wake, reinitializes RTC_DATA_ATTR back to false), same
 // guarantee the deep-sleep test relied on.
-#define LOCKDOWN_TEST_ENABLED 1
+// Currently OFF — the Settings back-button long-press was just for testing
+// lockdown mode; kept in the codebase, not wired up.
+#define LOCKDOWN_TEST_ENABLED 0
 #if LOCKDOWN_TEST_ENABLED
 void enterLockdownTest(void);
 // Long-press anywhere on the lockdown screen to bail out early — only takes
