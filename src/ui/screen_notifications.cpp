@@ -14,6 +14,7 @@ LV_FONT_DECLARE(font_alexandria_12);
 
 static lv_obj_t *notif_time_labels[NOTIF_ROWS];
 static lv_obj_t *notif_switches[NOTIF_ROWS];
+static lv_obj_t *vib_switch = NULL;
 
 static void notif_back_cb(lv_event_t *e) {
     if (lv_screen_active() != scr_notifications) return;
@@ -32,7 +33,17 @@ static void notif_row_cb(lv_event_t *e) {
     open_timeedit_reminder(idx);
 }
 
+static void vib_switch_cb(lv_event_t *e) {
+    lv_obj_t *sw = (lv_obj_t *)lv_event_get_target(e);
+    vibration_enabled = lv_obj_has_state(sw, LV_STATE_CHECKED);
+    saveVibrationSetting();
+}
+
 void refresh_notifications_list(void) {
+    if (vib_switch) {
+        if (vibration_enabled) lv_obj_add_state(vib_switch, LV_STATE_CHECKED);
+        else lv_obj_remove_state(vib_switch, LV_STATE_CHECKED);
+    }
     for (int i = 0; i < NOTIF_ROWS; i++) {
         if (!notif_time_labels[i]) continue;
         lv_label_set_text_fmt(notif_time_labels[i], "%02d:%02d",
@@ -92,6 +103,35 @@ void create_screen_notifications(void) {
     lv_obj_set_style_pad_row(list, 6, 0);
     lv_obj_set_flex_flow(list, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_scrollbar_mode(list, LV_SCROLLBAR_MODE_OFF);
+
+    // Global vibration on/off — a flex child of the same scrolling `list`
+    // as the reminder rows below, so it just adds one more scrollable item
+    // instead of needing its own pixel-exact placement on this round screen.
+    lv_obj_t *vib_row = lv_obj_create(list);
+    lv_obj_set_size(vib_row, LV_PCT(100), NOTIF_ROW_H);
+    lv_obj_set_style_bg_color(vib_row, color_surface, 0);
+    lv_obj_set_style_bg_opa(vib_row, LV_OPA_COVER, 0);
+    lv_obj_set_style_radius(vib_row, 8, 0);
+    lv_obj_set_style_border_color(vib_row, color_border, 0);
+    lv_obj_set_style_border_width(vib_row, 1, 0);
+    lv_obj_set_style_pad_hor(vib_row, 8, 0);
+    lv_obj_set_style_pad_ver(vib_row, 2, 0);
+    lv_obj_clear_flag(vib_row, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_flex_flow(vib_row, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(vib_row, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+
+    lv_obj_t *vib_label = lv_label_create(vib_row);
+    lv_obj_set_style_text_font(vib_label, &font_alexandria_12, 0);
+    lv_obj_set_style_text_color(vib_label, color_cream, 0);
+    lv_label_set_text(vib_label, "الاهتزاز");
+
+    vib_switch = lv_switch_create(vib_row);
+    lv_obj_set_size(vib_switch, 38, 20);
+    lv_obj_set_ext_click_area(vib_switch, 8);
+    lv_obj_set_style_bg_color(vib_switch, color_teal,
+        (lv_style_selector_t)LV_PART_INDICATOR | (lv_style_selector_t)LV_STATE_CHECKED);
+    if (vibration_enabled) lv_obj_add_state(vib_switch, LV_STATE_CHECKED);
+    lv_obj_add_event_cb(vib_switch, vib_switch_cb, LV_EVENT_VALUE_CHANGED, NULL);
 
     for (int i = 0; i < NOTIF_ROWS; i++) {
         lv_obj_t *row = lv_obj_create(list);

@@ -22,6 +22,17 @@ struct Reminder {
 extern Reminder reminders[MAX_REMINDERS];
 void saveReminders(void);
 
+// ── Vibration motor (main.cpp owns the pin + pulse timing) ─────
+// Off by default so an unconnected/floating pin is never toggled. Once the
+// motor is soldered to one of the free GPIOs (15/16/17/18/21/33, exposed on
+// connector P2 — see schematic), set VIBRATOR_PIN in main.cpp to match and
+// flip this to 1.
+#define VIBRATOR_ENABLED 0
+extern bool vibration_enabled;   // user's on/off preference (Notifications screen)
+void saveVibrationSetting(void);
+void vibrate_notification(void); // fires the reminder-notification pulse pattern;
+                                  // no-op unless VIBRATOR_ENABLED && vibration_enabled
+
 // ── Deep-sleep test (bench measurement only — see main.cpp) ────
 // Single master switch: flip to 0 and reflash to remove this feature
 // completely — the trigger in screen_settings.cpp and its implementation

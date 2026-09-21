@@ -43,6 +43,10 @@ LV_FONT_DECLARE(font_alexandria_12);
 // (shared with screen_notifications.cpp and screen_timeedit.cpp).
 #define BAT_ADC 1
 
+// Free GPIO broken out on connector P2 (see schematic) — change to whichever
+// pin the motor is actually soldered to (15/16/17/18/21/33 are all free).
+#define VIBRATOR_PIN 33
+
 // Sakamoto's algorithm: weekday of a Gregorian date, 0=Sun..6=Sat.
 // Needed because day_/month_/year_ track a calendar date but nothing
 // currently derives a day-of-week from it.
@@ -156,6 +160,64 @@ static void imu_power_down() {
     Wire.write(0x21);   // CTRL1 default (0x20, BE=1) | SensorDisable=1
     uint8_t err = Wire.endTransmission();
     Serial.printf("[IMU] power-down write %s\n", err == 0 ? "OK" : "FAILED");
+}
+
+// ── Vibration motor ─────────────────────────────────────────────
+// vibration_enabled is the user-facing on/off preference (Notifications
+// screen switch, persisted below) and is independent of VIBRATOR_ENABLED
+// (screens.h) — that one's a build-time master switch for whether any
+// hardware is even present to drive.
+bool vibration_enabled = true;
+
+#if VIBRATOR_ENABLED
+static lv_timer_t *vib_timer = NULL;
+static bool        vib_on = false;
+static int         vib_pulses_left = 0;
+static int         vib_pulse_ms = 0;
+static int         vib_gap_ms = 0;
+
+static void vib_timer_cb(lv_timer_t *t) {
+    if (vib_on) {
+        digitalWrite(VIBRATOR_PIN, LOW);
+        vib_on = false;
+        if (--vib_pulses_left <= 0) {
+            lv_timer_delete(t);
+            vib_timer = NULL;
+            return;
+        }
+        lv_timer_set_period(t, vib_gap_ms);
+    } else {
+        digitalWrite(VIBRATOR_PIN, HIGH);
+        vib_on = true;
+        lv_timer_set_period(t, vib_pulse_ms);
+    }
+}
+
+// Non-blocking: pulse_ms-on / gap_ms-off, repeated `count` times, advanced
+// by a self-deleting lv_timer rather than delay() — this gets called from
+// inside checkReminders(), which both the awake main loop and the
+// light-sleep wake path go through, so blocking here would stall LVGL and
+// the rest of the wake path along with it.
+void vibrate(int pulse_ms, int gap_ms, int count) {
+    if (!vibration_enabled || count <= 0) return;
+    if (vib_timer) { lv_timer_delete(vib_timer); vib_timer = NULL; }
+    vib_pulse_ms    = pulse_ms;
+    vib_gap_ms      = gap_ms;
+    vib_pulses_left = count;
+    digitalWrite(VIBRATOR_PIN, HIGH);
+    vib_on = true;
+    vib_timer = lv_timer_create(vib_timer_cb, pulse_ms, NULL);
+}
+
+void vibrate_notification() {
+    vibrate(120, 100, 2);   // two short pulses
+}
+#else
+void vibrate_notification() { }
+#endif
+
+void saveVibrationSetting() {
+    prefs.putBool("vib_en", vibration_enabled);
 }
 
 static int getBatteryPercent() {
@@ -405,6 +467,7 @@ static void showReminderPopup(int idx) {
 }
 
 static void wake_display(void);
+static void checkBatteryLockdown(void);
 
 static void checkReminders() {
     if (reminderActive) return;
@@ -426,6 +489,7 @@ static void checkReminders() {
                 reminderActive = true;
                 prefs.putInt("popup_idx", i);
                 if (display_sleeping) wake_display();
+                vibrate_notification();
                 showReminderPopup(i);
                 return;
             }
@@ -449,6 +513,9 @@ static void battery_timer_cb(lv_timer_t *timer) {
         lv_obj_set_style_text_color(home_bat_label, color_red, 0);
     else
         lv_obj_set_style_text_color(home_bat_label, color_grey, 0);
+    checkBatteryLockdown();   // catches a drop below 5% within 5s while awake —
+                              // the sleeping-branch check below is the one that
+                              // matters most (screen off is the majority state)
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -555,6 +622,27 @@ static void deepSleepUntil(uint64_t timer_wake_us) {
 
     Serial.flush();
     esp_deep_sleep_start();
+}
+
+// Entry into REAL battery lockdown during normal operation — the check in
+// setup() only ever runs once per boot, and normal (light-sleep) operation
+// never reboots on its own, so a battery that drains gradually while the
+// watch keeps running would otherwise never trip it at all. Called from
+// battery_timer_cb() (every 5s, while awake) and from loop()'s sleeping
+// branch (every wake, ~60s — the one that matters most, since screen-off
+// is where the watch actually spends most of its time).
+static void checkBatteryLockdown() {
+    if (in_lockdown) return;
+    int battPct = getBatteryPercent();
+    if (battPct < LOCKDOWN_ENTER_PCT) {
+        Serial.printf("[BATT] pct=%d — dropped below %d%% during normal "
+            "operation, entering lockdown now\n", battPct, LOCKDOWN_ENTER_PCT);
+        in_lockdown = true;
+        saveTime();
+        wallClockToSystemTime();
+        deepSleepUntil(LOCKDOWN_RECHECK_US);
+        // unreachable — deepSleepUntil() never returns
+    }
 }
 
 #if DEEP_SLEEP_TEST_ENABLED
@@ -671,6 +759,11 @@ void setup() {
 
     imu_power_down();   // unused IMU: drop from ~15uA power-on default to ~6uA power-down
 
+#if VIBRATOR_ENABLED
+    pinMode(VIBRATOR_PIN, OUTPUT);
+    digitalWrite(VIBRATOR_PIN, LOW);
+#endif
+
     analogReadResolution(12);
     analogSetPinAttenuation(BAT_ADC, ADC_11db);
 
@@ -693,6 +786,7 @@ void setup() {
     loadReminders();
     syncReminderPresets();
     loadTime();
+    vibration_enabled = prefs.getBool("vib_en", true);
 
     // Any deep-sleep-originated wake (bench test or battery lockdown below)
     // gets its wall clock restored from the RTC-backed system time instead
@@ -926,6 +1020,8 @@ void loop() {
         updateClock();
         checkReminders();                        // may itself call wake_display() if a reminder is due
         if (second_ == 0) saveTime();
+        checkBatteryLockdown();                  // every wake, screen on or off — this is what
+                                                  // actually catches a drained battery in time
 
         if (cause == ESP_SLEEP_WAKEUP_GPIO && display_sleeping) wake_display();
     } else {
