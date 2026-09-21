@@ -5,3 +5,6 @@ scripts/power_profiler/.venv/
 scripts/power_profiler/logs/
 scripts/power_profiler/__pycache__/
 
+
+# desktop simulator runtime state (fake NVS + RTC memory)
+.sim_state/

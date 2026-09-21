@@ -1,0 +1,279 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tasbeeh Watch Simulator</title>
+<style>
+  :root { --bg:#0d1117; --card:#161b22; --line:#2a313c; --txt:#e6edf3; --dim:#8b949e; --gold:#d4af37; --ok:#3fb950; --warn:#d29922; --bad:#f85149; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--txt); font:14px/1.45 system-ui,-apple-system,Segoe UI,sans-serif; }
+  header { display:flex; align-items:center; gap:14px; padding:14px 22px; border-bottom:1px solid var(--line); flex-wrap:wrap; }
+  header h1 { font-size:16px; margin:0; font-weight:600; letter-spacing:.3px; }
+  header h1 span { color:var(--gold); }
+  .chip { padding:3px 10px; border-radius:99px; background:#21262d; color:var(--dim); font-size:12px; white-space:nowrap; }
+  .chip b { color:var(--txt); font-weight:600; }
+  .chip.awake b { color:var(--ok); } .chip.light b { color:var(--warn); } .chip.deep b { color:var(--bad); }
+  main { display:flex; gap:26px; padding:22px; flex-wrap:wrap; justify-content:center; align-items:flex-start; }
+  #stage { width:440px; }
+  #watchWrap { position:relative; width:440px; height:440px; }
+  .ring { position:absolute; inset:0; border-radius:50%; border:3px solid var(--gold); opacity:0; pointer-events:none; }
+  .ring.go { animation: pulse .6s ease-out; }
+  @keyframes pulse { from { opacity:.85; transform:scale(.86);} to { opacity:0; transform:scale(1.22);} }
+  #watch { position:absolute; inset:0; border-radius:50%; will-change:transform;
+           background:radial-gradient(circle at 30% 25%, #4a5260, #1a1e25 55%, #0a0c10);
+           box-shadow:0 18px 50px #000c, inset 0 0 0 5px #0006, inset 0 0 0 9px #ffffff10; }
+  #glass { position:absolute; left:30px; top:30px; width:380px; height:380px; border-radius:50%; overflow:hidden; background:#000;
+           box-shadow:0 0 0 6px #000; touch-action:none; cursor:pointer; }
+  #screen { width:100%; height:100%; image-rendering:auto; display:block; }
+  #dim { position:absolute; inset:0; background:#000; pointer-events:none; transition:opacity .12s; }
+  #sleepTag { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-size:15px; color:#ffffff44; pointer-events:none; text-align:center; }
+  #crown { position:absolute; right:-4px; top:196px; width:16px; height:48px; border-radius:4px; background:linear-gradient(90deg,#3a414c,#6b7482,#3a414c); }
+  #hint { text-align:center; color:var(--dim); font-size:12px; margin-top:6px; }
+  #motorCard { margin-top:16px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:14px 16px; }
+  .card h2 { margin:0 0 10px; font-size:12px; text-transform:uppercase; letter-spacing:.9px; color:var(--dim); font-weight:600; display:flex; justify-content:space-between; align-items:center; }
+  #led { width:11px; height:11px; border-radius:50%; background:#30363d; display:inline-block; margin-right:6px; vertical-align:-1px; }
+  #led.on { background:var(--gold); box-shadow:0 0 10px var(--gold); }
+  #trace { width:100%; height:64px; display:block; background:#0d1117; border-radius:6px; }
+  #panel { width:400px; display:flex; flex-direction:column; gap:14px; }
+  .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+  button { background:#21262d; color:var(--txt); border:1px solid var(--line); border-radius:7px; padding:6px 12px; font:inherit; cursor:pointer; }
+  button:hover:not(:disabled) { border-color:#8b949e; background:#292f38; }
+  button:disabled { opacity:.4; cursor:default; }
+  button.danger:hover:not(:disabled) { border-color:var(--bad); }
+  input[type=range] { width:100%; accent-color:var(--gold); }
+  .zones { display:flex; height:6px; border-radius:3px; overflow:hidden; margin:2px 0 4px; }
+  .zones i { display:block; height:100%; }
+  .big { font-size:26px; font-weight:600; font-variant-numeric:tabular-nums; }
+  .sub { color:var(--dim); font-size:12px; }
+  .rem { display:flex; justify-content:space-between; align-items:center; gap:8px; padding:5px 0; border-top:1px solid var(--line); }
+  .rem:first-of-type { border-top:none; }
+  .rem .l { direction:rtl; font-size:15px; } .rem .t { color:var(--dim); font-variant-numeric:tabular-nums; }
+  #log { height:200px; overflow:auto; font:11.5px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace; background:#0d1117; border-radius:6px; padding:8px; white-space:pre-wrap; word-break:break-all; }
+  #log .m { color:var(--gold); } #log .s { color:#79c0ff; } #log .b { color:#a5d6a7; } #log .e { color:var(--bad); }
+  #banner { display:none; position:fixed; left:0; right:0; top:0; padding:8px; text-align:center; background:var(--warn); color:#000; font-weight:600; z-index:9; }
+  label.tg { display:flex; gap:6px; align-items:center; color:var(--dim); font-size:12px; cursor:pointer; }
+</style>
+</head>
+<body>
+<div id="banner">Simulator not responding — restarting after deep sleep, or stopped?</div>
+<header>
+  <h1><span>◐</span> Tasbeeh Watch Simulator</h1>
+  <span class="chip" id="cMode">mode <b>—</b></span>
+  <span class="chip" id="cScreen">screen <b>—</b></span>
+  <span class="chip" id="cBl">backlight <b>—</b></span>
+  <span class="chip" id="cBoot">boot <b>—</b></span>
+  <span class="chip" id="cTime">clock <b>—</b></span>
+</header>
+<main>
+  <section id="stage">
+    <div id="watchWrap">
+      <div class="ring" id="r1"></div><div class="ring" id="r2"></div>
+      <div id="watch">
+        <div id="crown"></div>
+        <div id="glass">
+          <canvas id="screen" width="240" height="240"></canvas>
+          <div id="dim"></div>
+          <div id="sleepTag"></div>
+        </div>
+      </div>
+    </div>
+    <div id="hint">click = tap · drag = swipe · hold ≈1s = long-press</div>
+
+    <div class="card" id="motorCard">
+      <h2><span><span id="led"></span>Vibration motor <span id="motorPin" class="sub"></span></span>
+        <span class="row">
+          <label class="tg"><input type="checkbox" id="snd"> 🔊 buzz</label>
+          <label class="tg"><input type="checkbox" id="hap"> 📱 phone haptics</label>
+        </span></h2>
+      <canvas id="trace" width="800" height="128"></canvas>
+      <div class="row" style="margin-top:10px">
+        <button id="bBuzz">Test vibration pattern</button>
+        <span class="sub" id="vibNote"></span>
+      </div>
+    </div>
+  </section>
+
+  <section id="panel">
+    <div class="card">
+      <h2>Battery <span class="sub">drives lockdown mode</span></h2>
+      <div class="row" style="justify-content:space-between"><span class="big" id="batVal">—</span><span class="sub" id="batZone"></span></div>
+      <input type="range" id="bat" min="0" max="100" value="80">
+      <div class="zones"><i style="width:5%;background:var(--bad)"></i><i style="width:5%;background:var(--warn)"></i><i style="width:90%;background:#238636"></i></div>
+      <div class="sub">enters lockdown &lt;5% · leaves it at ≥10% (hysteresis)</div>
+      <div class="row" style="margin-top:8px">
+        <button data-bat="100">100</button><button data-bat="50">50</button><button data-bat="19">19</button>
+        <button data-bat="9">9</button><button data-bat="4">4</button><button data-bat="0">0</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Sleep &amp; wake</h2>
+      <div class="sub" style="margin-bottom:8px">Idle 15 s and the screen sleeps (light sleep). Touch the glass to wake, or force a wake source:</div>
+      <div class="row">
+        <button id="bTimer" disabled>⏰ Timer wake</button>
+        <button id="bTouch" disabled>👆 Touch wake</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Reminders <span class="sub">fire = make it due now</span></h2>
+      <div id="rems" class="sub">—</div>
+    </div>
+
+    <div class="card">
+      <h2>Device</h2>
+      <div class="row">
+        <button id="bReboot" class="danger">⟳ Power cycle</button>
+        <button id="bFactory" class="danger">⚠ Factory reset</button>
+      </div>
+      <div class="sub" style="margin-top:8px">Settings, counters, reminders and the clock persist in <code>.sim_state/</code> like NVS.</div>
+    </div>
+
+    <div class="card">
+      <h2>Firmware log <span class="sub">Serial output</span></h2>
+      <div id="log"></div>
+    </div>
+  </section>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+const ctx = $('screen').getContext('2d');
+const img = ctx.createImageData(240, 240);
+let frame = 0, boot = -1, edgeSeq = 0, logSeq = 0, S = null, tState = 0, remsKey = '';
+const edges = [];          // [seq, simMs, level]
+let motor = 0, connected = true, primed = false;   // primed: don't replay stored motor edges as new buzzes on page load
+
+// ── frame stream ────────────────────────────────────────
+function draw(buf) {
+  const v = new Uint16Array(buf), d = img.data;
+  for (let i = 0; i < 57600; i++) {
+    const p = v[i], r = (p >> 11) & 31, g = (p >> 5) & 63, b = p & 31;
+    d[i*4] = (r << 3) | (r >> 2); d[i*4+1] = (g << 2) | (g >> 4); d[i*4+2] = (b << 3) | (b >> 2); d[i*4+3] = 255;
+  }
+  ctx.putImageData(img, 0, 0);
+}
+(async function frameLoop() {
+  for (;;) {
+    try {
+      const r = await fetch('/frame?since=' + frame);
+      if (r.status === 200) { frame = +r.headers.get('X-Frame'); draw(await r.arrayBuffer()); }
+    } catch (e) { await new Promise(r => setTimeout(r, 300)); }
+    await new Promise(r => setTimeout(r, 22));
+  }
+})();
+
+// ── state stream ────────────────────────────────────────
+function brightness(s) {
+  if (s.slpin || s.dispoff || s.bl <= 0) return 0;
+  return Math.min(1, 0.5 + 0.5 * Math.sqrt(s.bl / 70));   // normal duty (70) = full; lockdown (8) visibly dimmer
+}
+function classifyLog(l) { return l.startsWith('[MOTOR') ? 'm' : l.startsWith('[SIM') ? 's' : /^\[(BATT|LOCKDOWN|BOOT|WAKE)/.test(l) ? 'b' : /fail|error|FATAL/i.test(l) ? 'e' : ''; }
+async function poll() {
+  try {
+    const r = await fetch(`/state?edges=${edgeSeq}&log=${logSeq}`);
+    S = await r.json(); tState = performance.now();
+    if (!connected) { connected = true; $('banner').style.display = 'none'; }
+    if (S.boot !== boot) { boot = S.boot; primed = false; frame = 0; edgeSeq = 0; logSeq = 0; edges.length = 0; S = await (await fetch('/state?edges=0&log=0')).json(); }
+    render(S);
+  } catch (e) { if (connected) { connected = false; setTimeout(() => { if (!connected) $('banner').style.display = 'block'; }, 900); } }
+  setTimeout(poll, 40);
+}
+function render(s) {
+  const mode = s.mode;
+  $('cMode').className = 'chip ' + mode; $('cMode').innerHTML = 'mode <b>' + ({awake:'awake', light:'light sleep', deep:'DEEP SLEEP'}[mode]) + '</b>';
+  $('cScreen').innerHTML = 'screen <b>' + s.screen + '</b>';
+  $('cBl').innerHTML = 'backlight <b>' + Math.round(s.bl / 2.55) + '%</b>';
+  $('cBoot').innerHTML = 'boot <b>#' + s.boot + (s.fromDeep ? ' (deep-sleep wake)' : '') + '</b>';
+  $('cTime').innerHTML = 'clock <b>' + s.time + '</b>';
+  const b = brightness(s);
+  $('dim').style.opacity = 1 - b;
+  $('sleepTag').textContent = mode === 'deep' ? '💤 deep sleep — touch to reboot' : (b === 0 ? '💤 screen off — touch to wake' : '');
+  $('bTimer').disabled = $('bTouch').disabled = mode === 'awake';
+  $('bat').value = s.battery; $('batVal').textContent = s.battery + '%';
+  $('batZone').textContent = s.battery < 5 ? '🔒 lockdown' : s.battery < 10 ? 'lockdown (until ≥10%)' : s.battery < 20 ? 'low' : 'normal';
+  $('motorPin').textContent = s.motor.pin >= 0 ? '(GPIO' + s.motor.pin + ')' : '(no motor configured — set VIBRATOR_ENABLED)';
+  $('vibNote').textContent = s.vibEnabled ? '' : '"Vibration" switch is OFF in Notifications — pattern is suppressed';
+  // reminders
+  const key = JSON.stringify(s.reminders);
+  if (key !== remsKey) {
+    remsKey = key;
+    $('rems').innerHTML = s.reminders.map(r => `<div class="rem"><span class="l">${r.label}</span><span class="t">${String(r.h).padStart(2,'0')}:${String(r.m).padStart(2,'0')} ${r.on ? '● on' : '○ off'}</span><button data-fire="${r.i}">Fire</button></div>`).join('');
+  }
+  // motor edges
+  for (const e of s.edges) { edges.push(e); edgeSeq = Math.max(edgeSeq, e[0]); if (primed) onMotor(e[2]); }
+  primed = true;
+  while (edges.length > 40) edges.shift();
+  // log
+  if (s.log.lines.length) {
+    const el = $('log'), stick = el.scrollTop + el.clientHeight >= el.scrollHeight - 8;
+    for (const l of s.log.lines) { const d = document.createElement('div'); d.className = classifyLog(l); d.textContent = l; el.appendChild(d); }
+    while (el.children.length > 500) el.removeChild(el.firstChild);
+    if (stick) el.scrollTop = el.scrollHeight;
+  }
+  logSeq = s.log.seq;
+  motor = s.motor.level;
+}
+poll();
+
+// ── touch ───────────────────────────────────────────────
+const glass = $('glass'); let down = false, lastSend = 0;
+function pos(ev) { const r = glass.getBoundingClientRect(); return [Math.max(0, Math.min(239, Math.round((ev.clientX - r.left) * 240 / r.width))), Math.max(0, Math.min(239, Math.round((ev.clientY - r.top) * 240 / r.height)))]; }
+function sendTouch(ev, d) { const [x, y] = pos(ev); fetch(`/touch?x=${x}&y=${y}&d=${d}`).catch(() => {}); }
+glass.addEventListener('pointerdown', ev => { down = true; glass.setPointerCapture(ev.pointerId); sendTouch(ev, 1); ev.preventDefault(); });
+glass.addEventListener('pointermove', ev => { if (!down) return; const n = performance.now(); if (n - lastSend < 16) return; lastSend = n; sendTouch(ev, 1); });
+const up = ev => { if (!down) return; down = false; sendTouch(ev, 0); };
+glass.addEventListener('pointerup', up); glass.addEventListener('pointercancel', up);
+
+// ── controls ────────────────────────────────────────────
+const ctl = q => fetch('/ctl?' + q).catch(() => {});
+$('bat').addEventListener('input', e => ctl('battery=' + e.target.value));
+document.querySelectorAll('[data-bat]').forEach(b => b.onclick = () => ctl('battery=' + b.dataset.bat));
+$('bTimer').onclick = () => ctl('wake=timer'); $('bTouch').onclick = () => ctl('wake=touch');
+$('bBuzz').onclick = () => ctl('buzz=1');
+$('bReboot').onclick = () => ctl('reboot=1');
+$('bFactory').onclick = () => confirm('Erase saved settings, counters and reminders?') && ctl('factory=1');
+$('rems').addEventListener('click', e => { if (e.target.dataset.fire !== undefined) ctl('fire=' + e.target.dataset.fire); });
+
+// ── haptics: shake + rings + trace + sound + phone vibration ──
+let ac = null, osc = null, gain = null;
+function onMotor(level) {
+  $('led').classList.toggle('on', !!level);
+  if (level) {
+    const r = $(Math.random() < .5 ? 'r1' : 'r2'); r.classList.remove('go'); void r.offsetWidth; r.classList.add('go');
+    if ($('hap').checked && navigator.vibrate) navigator.vibrate(110);
+  }
+  if ($('snd').checked) {
+    if (!ac) { ac = new AudioContext(); gain = ac.createGain(); gain.gain.value = 0; osc = ac.createOscillator(); osc.type = 'sawtooth'; osc.frequency.value = 82; osc.connect(gain).connect(ac.destination); osc.start(); }
+    gain.gain.setTargetAtTime(level ? 0.12 : 0, ac.currentTime, 0.008);
+  }
+}
+$('snd').addEventListener('change', () => { if ($('snd').checked && ac) ac.resume(); });
+const watch = $('watch');
+const tr = $('trace'), tc = tr.getContext('2d');
+function simNow() { return S ? S.t + (performance.now() - tState) : 0; }
+(function anim() {
+  if (motor) { watch.style.transform = `translate(${(Math.random()-.5)*7}px,${(Math.random()-.5)*7}px) rotate(${(Math.random()-.5)*1.4}deg)`; }
+  else watch.style.transform = '';
+  // motor pin trace — like a logic-analyser capture of the last 4 s
+  const W = tr.width, H = tr.height, span = 4000, now = simNow();
+  tc.fillStyle = '#0d1117'; tc.fillRect(0, 0, W, H);
+  tc.strokeStyle = '#21262d'; tc.lineWidth = 1;
+  for (let i = 1; i < 8; i++) { const x = W - (i * 500 / span) * W; tc.beginPath(); tc.moveTo(x, 0); tc.lineTo(x, H); tc.stroke(); }
+  const X = t => W - ((now - t) / span) * W, hi = 22, lo = H - 22;
+  let level = 0, t0 = now - span;
+  const list = edges.filter(e => e[1] >= now - span * 1.5);
+  const pre = edges.filter(e => e[1] < now - span).pop(); if (pre) level = pre[2];
+  tc.beginPath(); tc.lineWidth = 2.5; tc.strokeStyle = '#d4af37';
+  let x = 0, y = level ? hi : lo; tc.moveTo(x, y);
+  for (const e of list) { if (e[1] < now - span) continue; x = X(e[1]); tc.lineTo(x, y); y = e[2] ? hi : lo; tc.lineTo(x, y); }
+  tc.lineTo(W, motor ? hi : lo); tc.stroke();
+  if (motor) { tc.fillStyle = '#d4af3722'; tc.fillRect(0, 0, W, H); }
+  tc.fillStyle = '#8b949e'; tc.font = '20px system-ui'; tc.fillText('4 s', 8, 22); tc.fillText('now', W - 44, H - 8);
+  requestAnimationFrame(anim);
+})();
+</script>
+</body>
+</html>

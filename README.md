@@ -7,6 +7,28 @@ LVGL v9, TFT_eSPI, and the Waveshare ESP32-S3-Touch-LCD-1.28 round display.
 
 ## Screens
 
+Captured from the [desktop simulator](sim/README.md) — the real firmware, running unmodified.
+
+<table>
+  <tr>
+    <td align="center"><img src="docs/screenshots/01-home.png" width="220" alt="Home"><br><sub><b>Home</b><br>12h clock, seconds arc, battery</sub></td>
+    <td align="center"><img src="docs/screenshots/02-istighfar.png" width="220" alt="Istighfar"><br><sub><b>Istighfar</b><br>tap to count, 0 → 100</sub></td>
+    <td align="center"><img src="docs/screenshots/03-tasbeeh.png" width="220" alt="Tasbeeh"><br><sub><b>Tasbeeh</b><br>3 phrases × 33</sub></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="docs/screenshots/04-settings.png" width="220" alt="Settings"><br><sub><b>Settings</b></sub></td>
+    <td align="center"><img src="docs/screenshots/05-time-editor.png" width="220" alt="Time editor"><br><sub><b>Set time</b></sub></td>
+    <td align="center"><img src="docs/screenshots/06-notifications.png" width="220" alt="Notifications"><br><sub><b>Notifications</b><br>preset reminders + vibration switch</sub></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="docs/screenshots/07-reminder-editor.png" width="220" alt="Reminder editor"><br><sub><b>Reminder editor</b><br>time + repeat days</sub></td>
+    <td align="center"><img src="docs/screenshots/08-reminder-popup.png" width="220" alt="Reminder popup"><br><sub><b>Reminder popup</b><br>wakes the screen and vibrates</sub></td>
+    <td align="center"><img src="docs/screenshots/09-battery-lockdown.png" width="220" alt="Battery lockdown"><br><sub><b>Battery lockdown</b><br>&lt;5% — dim, dead end until charged</sub></td>
+  </tr>
+</table>
+
+Layout sketch of the three main screens:
+
 ```
          HOME                          ISTIGHFAR                      TASBEEH
     ┌──────────────┐              ┌──────────────┐              ┌──────────────┐
@@ -56,6 +78,15 @@ too; TimeEdit/Notifications: tap `<` or the title).
 - **Notifications list**: tap a row = edit its time/days, tap its switch = toggle
   enabled without navigating
 - **Tasbeeh/Istighfar**: Tap anywhere = increment counter
+
+---
+
+## Desktop Simulator
+
+Run the real UI on your computer without flashing — `./sim/run.sh`, then open
+<http://localhost:8080>. It executes the actual firmware source on a mock hardware layer, with a browser
+control panel (battery slider, reminders, sleep/wake, and a visualizer for the vibration motor).
+See [`sim/README.md`](sim/README.md).
 
 ---
 
