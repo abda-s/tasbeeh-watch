@@ -45,7 +45,8 @@ LV_FONT_DECLARE(font_alexandria_12);
 
 // Free GPIO broken out on connector P2 (see schematic) — change to whichever
 // pin the motor is actually soldered to (15/16/17/18/21/33 are all free).
-#define VIBRATOR_PIN 33
+#define VIBRATOR_PIN 21
+#define VIBRATOR_ENABLED 1
 
 // Sakamoto's algorithm: weekday of a Gregorian date, 0=Sun..6=Sat.
 // Needed because day_/month_/year_ track a calendar date but nothing
