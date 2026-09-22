@@ -30,53 +30,39 @@
 
 ## About
 
-Tasbeeh Smartwatch is firmware for the [Waveshare ESP32-S3-Touch-LCD-1.28](https://www.waveshare.com/esp32-s3-touch-lcd-1.28.htm)
-that turns a round touchscreen dev board into a simple watch for children. It tells the time, counts
-*istighfar* and *tasbeeh* with a tap, and gently reminds a child of daily routines — drink water, wash
-hands, homework, brush teeth, bedtime — with a popup and, optionally, a vibration.
+<table>
+  <tr>
+    <td valign="top">
 
-<p align="center">
-  <img src="documentation/screenshots/on-device.jpg" alt="The firmware running on the real board, in a 3D-printed case" width="320"><br>
-  <sub>Running on the real board, in a 3D-printed case — not just the simulator above.</sub>
-</p>
+Firmware for the [Waveshare ESP32-S3-Touch-LCD-1.28](https://www.waveshare.com/esp32-s3-touch-lcd-1.28.htm):
+a round-screen offline dhikr counter for kids. Tells time, counts *istighfar* and *tasbeeh* by tap, and
+reminds on daily routines (water, handwashing, homework, teeth, bedtime) with a popup and optional vibration.
 
-### What it is — and what it isn't
+- **Not a prayer app.** No prayer times, adhan or Qibla — only what's listed under [Features](#features).
+- **Offline.** No WiFi, Bluetooth, phone app or cloud. Everything lives in the watch's own flash.
+- **Arabic UI**, right-to-left.
+- **Clock set by hand** (Settings), kept by the chip's internal oscillator — no network time, no RTC
+  battery, so it drifts slowly.
 
-- **It is** a clock, two tap-to-count remembrance counters, and a small set of routine reminders. The whole
-  interface is in Arabic (right-to-left).
-- **It is not a prayer app.** There are no prayer times, adhan, Qibla direction or other prayer features —
-  what's here is exactly what's listed under [Features](#features).
-- **It is offline.** No WiFi, no Bluetooth, no phone app, no cloud. The counters, settings, reminders and the
-  time all live in the watch's own flash memory.
-- **The clock is set by hand** (Settings) and kept by the chip's internal oscillator — there's no network time
-  and no RTC battery, so it will slowly drift and may need re-setting now and then.
-
-### Why it's built the way it is
-
-- **Battery first.** The cell on this board measures about **48 mAh**, roughly half the advertised 100 mAh, so
-  the firmware is designed around power: the screen sleeps after 15 s, the CPU really halts between wakes
-  (light sleep), and below 5% battery the watch drops into deep sleep. Screen-off draw went from ~51 mA in the
-  first version to under 5 mA, and about 0.7 mA in deep sleep — all measured.
-- **Protecting the battery.** This board has no hardware over-discharge protection, so firmware is the only
-  safeguard: under 5% the watch locks down to a dim "please charge" message until it's charged again.
-- **Simple for a child.** Three screens in a swipe ring, large tap targets, no menus to get lost in.
-- **Arabic that renders properly.** LVGL's Arabic shaper needs a font with presentation-form glyphs, which
-  modern fonts don't ship — this project generates its own (see [Font System](documentation/fonts.md)).
-- **Testable without the hardware.** A desktop simulator runs the real firmware in a browser tab.
+</td>
+    <td align="center" width="270">
+      <img src="documentation/screenshots/on-device.jpg" alt="The firmware running on the real board, in a 3D-printed case" width="240"><br>
+      <sub>On the real board, in a 3D-printed case.</sub>
+    </td>
+  </tr>
+</table>
 
 ## Features
 
-- **Round 240×240 UI** with a three-screen swipe ring: Home ↔ Istighfar ↔ Tasbeeh.
-- **Clock** — 12-hour time with a seconds arc, day, date and battery percentage.
-- **Istighfar counter** — tap to count 0 → 100 with a progress arc.
-- **Tasbeeh counter** — three phrases (سبحان الله / الحمد لله / الله أكبر) × 33, with progress dots. Counts and
-  the current phrase survive reboots.
-- **Settings** — set the time and manage notifications.
-- **Reminders** — five preset routines, each with its own on/off switch, time and days of the week, a popup,
-  and optional vibration. Add, rename or remove presets by editing one config table.
-- **Power management** — display sleep, real light sleep with instant touch wake, drift-managed timekeeping,
-  deep sleep and battery lockdown.
-- **Desktop simulator** — run and poke at the UI on your computer, no board needed.
+- **Round 240×240 UI**, three-screen swipe ring: Home ↔ Istighfar ↔ Tasbeeh.
+- **Clock** — 12h time, seconds arc, day, date, battery %.
+- **Istighfar counter** — tap to count 0 → 100.
+- **Tasbeeh counter** — 3 phrases (سبحان الله / الحمد لله / الله أكبر) × 33, progress dots, persists across reboots.
+- **Settings** — set the time, manage notifications.
+- **5 preset reminders** — per-reminder on/off, time, days, popup, optional vibration.
+- **Power management** — display sleep, real light sleep, deep sleep, and a <5% battery lockdown (this
+  board has no hardware over-discharge protection).
+- **Desktop simulator** — runs the real firmware in a browser tab, no board needed.
 
 ## Screenshots
 
@@ -84,19 +70,19 @@ Captured from the [desktop simulator](sim/README.md) — the real firmware, runn
 
 <table>
   <tr>
-    <td align="center"><img src="documentation/screenshots/01-home.png" width="220" alt="Home"><br><sub><b>Home</b><br>12h clock, seconds arc, battery</sub></td>
-    <td align="center"><img src="documentation/screenshots/02-istighfar.png" width="220" alt="Istighfar"><br><sub><b>Istighfar</b><br>tap to count, 0 → 100</sub></td>
-    <td align="center"><img src="documentation/screenshots/03-tasbeeh.png" width="220" alt="Tasbeeh"><br><sub><b>Tasbeeh</b><br>3 phrases × 33</sub></td>
+    <td align="center"><img src="documentation/screenshots/01-home.png" width="220" alt="Home"><br><sub><b>Home</b></sub></td>
+    <td align="center"><img src="documentation/screenshots/02-istighfar.png" width="220" alt="Istighfar"><br><sub><b>Istighfar</b></sub></td>
+    <td align="center"><img src="documentation/screenshots/03-tasbeeh.png" width="220" alt="Tasbeeh"><br><sub><b>Tasbeeh</b></sub></td>
   </tr>
   <tr>
     <td align="center"><img src="documentation/screenshots/04-settings.png" width="220" alt="Settings"><br><sub><b>Settings</b></sub></td>
     <td align="center"><img src="documentation/screenshots/05-time-editor.png" width="220" alt="Time editor"><br><sub><b>Set time</b></sub></td>
-    <td align="center"><img src="documentation/screenshots/06-notifications.png" width="220" alt="Notifications"><br><sub><b>Notifications</b><br>preset reminders + vibration switch</sub></td>
+    <td align="center"><img src="documentation/screenshots/06-notifications.png" width="220" alt="Notifications"><br><sub><b>Notifications</b></sub></td>
   </tr>
   <tr>
-    <td align="center"><img src="documentation/screenshots/07-reminder-editor.png" width="220" alt="Reminder editor"><br><sub><b>Reminder editor</b><br>time + repeat days</sub></td>
-    <td align="center"><img src="documentation/screenshots/08-reminder-popup.png" width="220" alt="Reminder popup"><br><sub><b>Reminder popup</b><br>wakes the screen and vibrates</sub></td>
-    <td align="center"><img src="documentation/screenshots/09-battery-lockdown.png" width="220" alt="Battery lockdown"><br><sub><b>Battery lockdown</b><br>&lt;5% — dim, dead end until charged</sub></td>
+    <td align="center"><img src="documentation/screenshots/07-reminder-editor.png" width="220" alt="Reminder editor"><br><sub><b>Reminder editor</b></sub></td>
+    <td align="center"><img src="documentation/screenshots/08-reminder-popup.png" width="220" alt="Reminder popup"><br><sub><b>Reminder popup</b></sub></td>
+    <td align="center"><img src="documentation/screenshots/09-battery-lockdown.png" width="220" alt="Battery lockdown"><br><sub><b>Battery lockdown</b> (&lt;5%)</sub></td>
   </tr>
 </table>
 
@@ -121,8 +107,8 @@ If the board isn't detected, enter download mode first: hold **BOOT**, press **R
 ./sim/run.sh          # then open http://localhost:8080
 ```
 
-Runs the real UI on your computer with a browser control panel — battery slider, reminders, sleep/wake, and a
-visualizer for the vibration motor. Needs only `g++` and PlatformIO. See [`sim/README.md`](sim/README.md).
+Browser control panel — battery slider, reminders, sleep/wake, vibration visualizer. Needs `g++` and
+PlatformIO. See [`sim/README.md`](sim/README.md).
 
 ## Hardware
 
@@ -139,44 +125,29 @@ More in [Hardware](documentation/hardware.md); component datasheets are in [`dat
 
 ## Power profiler
 
-The battery numbers in this project weren't estimated — they were **measured** with a small power profiler
-built for it, and kept in [`power_profiler/`](power_profiler/README.md). It's a hand-built current/voltage
-meter (Arduino Nano + INA226 + OLED) that streams to a desktop app, which plots the watch's current draw in
-real time and lines it up with the firmware's own log markers (`[SLEEP]`, `[WAKE]`, `[SCREEN_ON]`…). That's how
-each optimization was proven, and how the real battery capacity turned out to be **~48 mAh, not 100 mAh**.
-
-<p align="center">
-  <img src="power_profiler/screenshots/hardware-with-ui.jpg" alt="The profiler hardware next to its desktop UI" width="640"><br>
-  <sub>The profiler module next to the desktop app, mid-measurement.</sub>
-</p>
-
-### The hardware
+Battery numbers here are measured, not estimated, with a small INA226-based profiler kept in
+[`power_profiler/`](power_profiler/README.md). It found the real battery capacity to be **~48 mAh**, not
+the advertised 100 mAh.
 
 <table>
   <tr>
-    <td width="52%"><img src="power_profiler/screenshots/hardware-module.jpg" alt="Profiler module: Arduino Nano, INA226 and OLED on a perfboard"></td>
+    <td width="270"><img src="power_profiler/screenshots/hardware-module.jpg" alt="Profiler module: Arduino Nano, INA226 and OLED on a perfboard"></td>
     <td valign="top">
-      <ul>
-        <li><b>INA226</b> current/voltage sensor with a 10&nbsp;mΩ shunt, wired in series with the watch's supply</li>
-        <li><b>Arduino Nano</b> reads it over I²C and streams <code>voltage,current</code> over USB serial</li>
-        <li><b>0.96″ OLED</b> shows live volts and milliamps, so it works as a standalone meter too</li>
-        <li>Sketch: <a href="power_profiler/firmware/ina226_timed.ino"><code>ina226_timed.ino</code></a> (steady 100&nbsp;Hz)</li>
-      </ul>
-    </td>
+
+- **Sensor:** INA226 (10 mΩ shunt) in series with the watch's supply, read by an Arduino Nano over I²C,
+  streamed over USB serial. Sketch: [`ina226_timed.ino`](power_profiler/firmware/ina226_timed.ino).
+- **OLED:** live volts/mA readout, so the module also works as a standalone meter.
+- **App:** PyQt5/pyqtgraph oscilloscope-style current/voltage plot, ROI charge/energy readout,
+  battery-life estimate, duty-cycle analysis from the firmware's `[SLEEP]`/`[WAKE]` log markers, CSV
+  export. Full list: [profiler README](power_profiler/README.md).
+
+</td>
   </tr>
 </table>
 
-### The desktop app
+### Measured
 
-A PyQt5 / pyqtgraph oscilloscope-style viewer: dual-axis current and voltage plot, span / zoom / follow
-controls, an ROI cursor for per-cycle charge and energy, a 1S LiPo battery model that estimates remaining
-life, and automatic duty-cycle analysis from the watch's `[SLEEP]` / `[WAKE]` markers. A second serial port
-carries the watch's debug log, drawn as red markers at the exact moment each line arrived. Everything is also
-written to CSV. Full feature list in the [profiler README](power_profiler/README.md).
-
-### What it measured
-
-| Version | What changed | Screen | Avg current |
+| Version | Change | Screen | Avg current |
 |---|---|---|---|
 | V1 | Baseline, WiFi connected | off / on | 51 mA / 90 mA |
 | V1.1 | WiFi removed | off / on | 35 mA / 85 mA |
@@ -186,21 +157,18 @@ written to CSV. Full feature list in the [profiler README](power_profiler/README
 | V1.3 | Real light sleep | off (asleep) | **~5 mA** |
 | V1.5 | Deep sleep (lockdown mode) | asleep | **~0.7 mA** |
 
+Full reasoning per version: [Power Management](documentation/power-management.md).
+
 <table>
   <tr>
-    <td align="center"><img src="power_profiler/screenshots/v1-screen-off.png" alt="V1, screen off, 51 mA average"><br><sub><b>V1</b> · screen off, WiFi on — <b>51 mA</b> average</sub></td>
-    <td align="center"><img src="power_profiler/screenshots/v1-screen-on-wifi.png" alt="V1, screen on, WiFi bursts, 90 mA average"><br><sub><b>V1</b> · screen on — WiFi bursts on top of a <b>90 mA</b> average</sub></td>
+    <td align="center"><img src="power_profiler/screenshots/v1-screen-off.png" alt="V1, screen off, 51 mA average"><br><sub>V1 · screen off — 51 mA</sub></td>
+    <td align="center"><img src="power_profiler/screenshots/v1-screen-on-wifi.png" alt="V1, screen on, WiFi bursts, 90 mA average"><br><sub>V1 · screen on — 90 mA</sub></td>
   </tr>
   <tr>
-    <td align="center"><img src="power_profiler/screenshots/v1.22-screen-on.png" alt="V1.22, screen on, 43 mA average"><br><sub><b>V1.22</b> · screen on at 80 MHz — <b>43 mA</b> average</sub></td>
-    <td align="center"><img src="power_profiler/screenshots/v1.3-light-sleep.png" alt="V1.3, light sleep, ~5 mA floor with periodic wake spikes"><br><sub><b>V1.3</b> · light sleep — a ~5 mA floor, with the screen-on stretch highlighted</sub></td>
-  </tr>
-  <tr>
-    <td align="center" colspan="2"><img src="power_profiler/screenshots/charging-near-full.png" alt="Battery charging curve near full, with sleep and wake markers" width="60%"><br><sub><b>Charging</b> · the current tapering off as the battery nears full, with wake markers from the watch's log</sub></td>
+    <td align="center"><img src="power_profiler/screenshots/v1.22-screen-on.png" alt="V1.22, screen on, 43 mA average"><br><sub>V1.22 · screen on — 43 mA</sub></td>
+    <td align="center"><img src="power_profiler/screenshots/v1.3-light-sleep.png" alt="V1.3, light sleep, ~5 mA floor"><br><sub>V1.3 · light sleep — ~5 mA floor</sub></td>
   </tr>
 </table>
-
-Every version, with the reasoning behind each change, is in [Power Management](documentation/power-management.md).
 
 ### Try it
 
