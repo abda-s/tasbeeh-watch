@@ -16,6 +16,7 @@
   --gold: #d4af37;      /* color_gold */
   --gold-soft: #e8c766;
   --teal: #33cc55;      /* color_teal */
+  --yellow: #ffcc33;    /* light sleep — distinct from --gold, which is already used everywhere for chrome/accents */
   --red: #ff5c5c;
   --heading: "Space Grotesk", var(--sans);
   --sans: "DM Sans", -apple-system, "Segoe UI", sans-serif;
@@ -128,7 +129,7 @@ a { color: var(--gold-soft); }
    section on small screens — simplest fix per the skill's own "Fixed
    Positioning" rule is to just not use fixed/sticky here at all). Two
    panels appear beside each other at 700px, then flank the watch on
-   both sides at 1080px so it reads as "surrounded", not "off to the
+   both sides at 1160px so it reads as "surrounded", not "off to the
    side of a list". */
 .stage {
   display: grid;
@@ -144,9 +145,21 @@ a { color: var(--gold-soft); }
     grid-template-areas: "watch watch" "left right";
   }
 }
-@media (min-width: 1080px) {
+@media (min-width: 1160px) {
   .stage {
-    grid-template-columns: minmax(0,1fr) minmax(300px, 340px) minmax(0,1fr);
+    /* Left and right MUST be the same track size. Two equal 1fr (or
+       equal minmax()) tracks flanking a fixed middle one is the only
+       way a grid centers that middle item on the page using plain
+       CSS — it works because the two outer tracks always resolve to
+       literally the same computed width. Giving the panels different
+       widths (even via max-width on the content instead of the track)
+       breaks that equality and the watch drifts off-center by roughly
+       half the width difference — measured, not guessed, after two
+       earlier attempts at "narrower battery, wider reminders" both
+       visibly failed this exact way. If asymmetric panel widths come
+       back, they need JS measuring actual rendered widths and
+       compensating with a transform, not a CSS-only trick. */
+    grid-template-columns: minmax(340px, 1fr) minmax(300px, 340px) minmax(340px, 1fr);
     align-items: start;
     gap: 28px;
     grid-template-areas: "left watch right";
@@ -194,8 +207,95 @@ a { color: var(--gold-soft); }
   box-shadow: inset 0 0 0 3px #050505;
   cursor: pointer;
   touch-action: none;
+  position: relative;
 }
 #watch-canvas { width: 100%; height: 100%; display: block; }
+
+/* ── screen-off indicator ─────────────────────────────────────────
+   The canvas only repaints when the firmware actually flushes a new
+   frame, so during light/deep sleep it just freezes on whatever was
+   last drawn -- on real hardware that's invisible (backlight is off),
+   here it looked like the page had frozen. This overlay stands in for
+   the missing backlight: it's driven purely by state.bl from the
+   firmware's own PWM duty, not by client-side guessing. */
+.sleep-overlay {
+  position: absolute; inset: 0; border-radius: 50%;
+  background: rgba(2, 5, 3, 0.94);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px;
+  color: var(--ink-dim);
+  opacity: 0; pointer-events: none;
+  transition: opacity .5s ease, color .3s ease;
+}
+/* Light sleep (RAM kept, wakes in ~ms) vs. deep sleep (a real reboot,
+   only entered under <5% battery lockdown -- reachable here by dragging
+   the battery slider down) are different enough states in the real
+   firmware that this shouldn't read as one generic "off". */
+.sleep-overlay.on { opacity: 1; color: var(--yellow); }
+.sleep-overlay.on.deep { color: var(--red); }
+.sleep-overlay > svg { width: 22px; height: 22px; opacity: .55; }
+#sleep-overlay-text { font-family: var(--mono); font-size: 11px; letter-spacing: .04em; text-transform: uppercase; }
+
+/* The actual call to action -- distinct from the status line above it
+   (plain weight, normal case, its own gentle pulse) since it's the one
+   piece of this overlay that's actually asking for an action. */
+.tap-to-wake {
+  display: flex; align-items: center; gap: 6px;
+  font-family: var(--sans); font-weight: 600; font-size: 12.5px;
+  margin-top: 2px;
+}
+.tap-to-wake svg { width: 16px; height: 16px; opacity: 1; }
+@media (prefers-reduced-motion: no-preference) {
+  .tap-to-wake { animation: tap-invite 1.8s ease-in-out infinite; }
+}
+@keyframes tap-invite { 0%, 100% { opacity: .55; } 50% { opacity: 1; } }
+
+/* ── "this is touchable" onboarding pulse ─────────────────────────
+   Plays a few times right after boot, then dismisses itself for good
+   (app.js) -- a wordless nudge toward the touch hint text below, since
+   "click/drag the canvas" isn't obviously a real touchscreen otherwise. */
+.tap-hint {
+  position: absolute; left: 50%; top: 50%; width: 60px; height: 60px;
+  margin: -30px 0 0 -30px;
+  border-radius: 50%;
+  border: 2px solid var(--gold-soft);
+  opacity: 0; pointer-events: none; z-index: 3;   /* above .vibe-rings (2) */
+  transition: opacity .4s ease;
+}
+.tap-hint.show { opacity: 1; }
+@media (prefers-reduced-motion: no-preference) {
+  .tap-hint.show { animation: tap-pulse 1.4s ease-out 3; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tap-hint.show { opacity: .6; }   /* a static ring instead of a moving one */
+}
+@keyframes tap-pulse {
+  0%   { transform: scale(.3); opacity: .9; }
+  70%  { transform: scale(1);  opacity: 0; }
+  100% { transform: scale(1);  opacity: 0; }
+}
+
+/* ── vibration rings: expanding ripples on each motor pulse ──────── */
+.vibe-rings { position: absolute; inset: 0; pointer-events: none; z-index: 2; }   /* above .watch-case's z-index:1 */
+.vibe-ring {
+  position: absolute; inset: 0; border-radius: 50%;
+  border: 2px solid var(--gold-soft);
+  box-shadow: 0 0 16px rgba(232, 199, 102, .5);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .vibe-ring { animation: vibe-ripple 0.85s cubic-bezier(.2,.7,.3,1) forwards; }
+}
+@media (prefers-reduced-motion: reduce) {
+  /* No motion: a single static flash instead of a moving ring. */
+  .vibe-ring { animation: vibe-flash 0.5s ease-out forwards; }
+}
+@keyframes vibe-ripple {
+  from { transform: scale(0.94); opacity: .85; border-width: 3px; }
+  to   { transform: scale(1.55); opacity: 0; border-width: 1px; }
+}
+@keyframes vibe-flash {
+  from { opacity: .7; }
+  to   { opacity: 0; }
+}
 
 .watch-status {
   font-family: var(--mono); font-size: 12px; color: var(--ink-dim);
@@ -206,7 +306,16 @@ a { color: var(--gold-soft); }
   background: var(--glass); border: 1px solid var(--glass-border);
 }
 .watch-status b { color: var(--cream); font-weight: 600; }
-.watch-hint { font-size: 13px; color: var(--ink-dim); text-align: center; max-width: 280px; }
+/* Mode chip: awake stays the default chip look; sleep states get the same
+   yellow/red the sleep overlay uses, so the two agree with each other. */
+.watch-status .mode-light { color: var(--yellow); border-color: rgba(255,204,51,.35); background: rgba(255,204,51,.08); }
+.watch-status .mode-deep { color: var(--red); border-color: rgba(255,92,92,.35); background: rgba(255,92,92,.08); }
+.watch-hint {
+  font-size: 13px; color: var(--ink-dim); text-align: center; max-width: 300px;
+  display: flex; align-items: center; gap: 7px; justify-content: center;
+}
+.watch-hint svg { width: 15px; height: 15px; flex-shrink: 0; color: var(--gold-soft); opacity: .8; }
+.watch-hint b { color: var(--cream); font-weight: 600; }
 
 /* ── control panel ───────────────────────────────────────────────*/
 .panel { display: flex; flex-direction: column; gap: 18px; min-width: 0; width: 100%; }
@@ -220,7 +329,6 @@ a { color: var(--gold-soft); }
   transition: border-color .2s;
 }
 .card:hover { border-color: rgba(233, 217, 168, 0.22); }
-.card-log { flex: 1; display: flex; flex-direction: column; min-height: 0; }
 .card h2 {
   margin: 0 0 16px;
   display: flex; align-items: center; gap: 9px;
@@ -251,21 +359,48 @@ a { color: var(--gold-soft); }
 }
 .battery-row output { font-family: var(--mono); font-weight: 600; width: 4.5ch; text-align: right; color: var(--cream); }
 
+/* Themed <input type=time> -- shared by the Set Time card and each
+   reminder row, so a picker looks like it belongs to this page instead
+   of the browser's stock control. */
+input[type=time] {
+  font-family: var(--mono); font-size: 13px; color: var(--cream);
+  background: rgba(0,0,0,.25); border: 1px solid var(--glass-border); border-radius: 8px;
+  padding: 7px 9px; color-scheme: dark;
+}
+input[type=time]::-webkit-calendar-picker-indicator { filter: invert(.7) sepia(1) saturate(3) hue-rotate(2deg); cursor: pointer; }
+
+.time-row { display: flex; align-items: center; gap: 10px; }
+.time-row input[type=time] { flex: 1; }
+
 .reminder-list { display: flex; flex-direction: column; gap: 8px; }
 .reminder-row {
-  display: flex; align-items: center; gap: 10px;
+  display: flex; align-items: center; gap: 8px;
   background: rgba(0,0,0,.18); border: 1px solid var(--glass-border); border-radius: 12px;
   padding: 10px 12px;
   transition: border-color .15s, background .15s;
 }
 .reminder-row:hover { border-color: rgba(233,217,168,.28); background: rgba(0,0,0,.28); }
-.reminder-row .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--glass-border); flex-shrink: 0; }
-.reminder-row.on .dot { background: var(--teal); box-shadow: 0 0 8px var(--teal); }
-.reminder-row .label { flex: 1; font-size: 13.5px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.reminder-row .time { font-family: var(--mono); font-size: 12px; color: var(--ink-dim); }
+.reminder-row.on { border-color: rgba(51,204,85,.3); }
+
+/* Enabled toggle -- a checkbox under the hood, drawn as a small switch. */
+.rem-toggle {
+  appearance: none; flex-shrink: 0; width: 30px; height: 18px; border-radius: 999px;
+  background: var(--glass-border); border: none; cursor: pointer; position: relative;
+  transition: background .15s;
+}
+.rem-toggle::before {
+  content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%;
+  background: var(--ink); transition: transform .15s;
+}
+.rem-toggle:checked { background: var(--teal); }
+.rem-toggle:checked::before { transform: translateX(12px); box-shadow: 0 0 6px rgba(51,204,85,.7); }
+
+.reminder-row .label { flex: 1; font-size: 13.5px; min-width: 56px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.reminder-row .rem-time { width: 132px; flex-shrink: 0; }
 .reminder-row button {
   font-family: var(--sans); font-weight: 600; font-size: 11.5px; padding: 8px 14px; min-height: 34px; border-radius: 999px;
   border: 1px solid rgba(212,175,55,.35); background: rgba(212,175,55,.08); color: var(--gold-soft); cursor: pointer;
+  flex-shrink: 0;
   transition: background .15s, transform .15s;
 }
 .reminder-row button:hover { background: rgba(212,175,55,.2); transform: translateY(-1px); }
@@ -289,11 +424,35 @@ a { color: var(--gold-soft); }
 }
 .motor-dot.buzz { background: var(--gold-soft); box-shadow: 0 0 14px var(--gold-soft); }
 
+/* ── serial log: its own full-width section, not squeezed into a side
+   column (see index.html for why) ─────────────────────────────────── */
+.log-section {
+  /* Plain .wrap width, same as .stage -- no grid needed to line these
+     up: since the panels above now fill their tracks completely (see
+     .stage's comment on why that has to be true), the panels' rendered
+     edges ARE .wrap's inner content edges. Matching .wrap is matching
+     the panels. */
+  padding: 0 20px 40px;
+}
+.log-card { padding: 0; overflow: hidden; }
+.log-card summary {
+  list-style: none; cursor: pointer; user-select: none;
+  display: flex; align-items: center; gap: 9px;
+  padding: 16px 22px;
+  font-family: var(--heading); font-size: 13.5px; letter-spacing: .04em; text-transform: uppercase;
+  color: var(--ink); font-weight: 600;
+}
+.log-card summary::-webkit-details-marker { display: none; }
+.log-card summary svg:first-child { width: 17px; height: 17px; color: var(--gold-soft); flex-shrink: 0; }
+.log-card summary .chevron { width: 16px; height: 16px; margin-left: auto; color: var(--ink-dim); transition: transform .2s; }
+.log-card[open] summary .chevron { transform: rotate(180deg); }
+.log-card summary:hover { background: rgba(233, 217, 168, 0.04); }
+
 .log-panel {
   font-family: var(--mono); font-size: 11.5px; line-height: 1.65; color: var(--ink-dim);
-  background: rgba(0,0,0,.28); border: 1px solid var(--glass-border); border-radius: 12px;
-  padding: 12px 14px; height: 170px; flex: 1; min-height: 170px;
-  overflow-y: auto; white-space: pre-wrap; word-break: break-all;
+  background: rgba(0,0,0,.28); border-top: 1px solid var(--glass-border);
+  margin: 0 22px 20px; border-radius: 10px; padding: 14px 16px;
+  height: 220px; overflow-y: auto; white-space: pre-wrap; word-break: break-all;
 }
 .log-panel .fresh { color: var(--teal); }
 .log-panel::-webkit-scrollbar { width: 8px; }

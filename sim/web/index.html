@@ -3,72 +3,260 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Tasbeeh Watch Simulator</title>
+<title>Tasbeeh Watch — Native Simulator</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
-  :root { --bg:#0d1117; --card:#161b22; --line:#2a313c; --txt:#e6edf3; --dim:#8b949e; --gold:#d4af37; --ok:#3fb950; --warn:#d29922; --bad:#f85149; }
-  * { box-sizing: border-box; }
-  body { margin:0; background:var(--bg); color:var(--txt); font:14px/1.45 system-ui,-apple-system,Segoe UI,sans-serif; }
-  header { display:flex; align-items:center; gap:14px; padding:14px 22px; border-bottom:1px solid var(--line); flex-wrap:wrap; }
-  header h1 { font-size:16px; margin:0; font-weight:600; letter-spacing:.3px; }
-  header h1 span { color:var(--gold); }
-  .chip { padding:3px 10px; border-radius:99px; background:#21262d; color:var(--dim); font-size:12px; white-space:nowrap; }
-  .chip b { color:var(--txt); font-weight:600; }
-  .chip.awake b { color:var(--ok); } .chip.light b { color:var(--warn); } .chip.deep b { color:var(--bad); }
-  main { display:flex; gap:26px; padding:22px; flex-wrap:wrap; justify-content:center; align-items:flex-start; }
-  #stage { width:440px; }
-  #watchWrap { position:relative; width:440px; height:440px; }
-  .ring { position:absolute; inset:0; border-radius:50%; border:3px solid var(--gold); opacity:0; pointer-events:none; }
-  .ring.go { animation: pulse .6s ease-out; }
-  @keyframes pulse { from { opacity:.85; transform:scale(.86);} to { opacity:0; transform:scale(1.22);} }
-  #watch { position:absolute; inset:0; border-radius:50%; will-change:transform;
-           background:radial-gradient(circle at 30% 25%, #4a5260, #1a1e25 55%, #0a0c10);
-           box-shadow:0 18px 50px #000c, inset 0 0 0 5px #0006, inset 0 0 0 9px #ffffff10; }
-  #glass { position:absolute; left:30px; top:30px; width:380px; height:380px; border-radius:50%; overflow:hidden; background:#000;
-           box-shadow:0 0 0 6px #000; touch-action:none; cursor:pointer; }
-  #screen { width:100%; height:100%; image-rendering:auto; display:block; }
-  #dim { position:absolute; inset:0; background:#000; pointer-events:none; transition:opacity .12s; }
-  #sleepTag { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-size:15px; color:#ffffff44; pointer-events:none; text-align:center; }
-  #crown { position:absolute; right:-4px; top:196px; width:16px; height:48px; border-radius:4px; background:linear-gradient(90deg,#3a414c,#6b7482,#3a414c); }
-  #hint { text-align:center; color:var(--dim); font-size:12px; margin-top:6px; }
-  #motorCard { margin-top:16px; }
-  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:14px 16px; }
-  .card h2 { margin:0 0 10px; font-size:12px; text-transform:uppercase; letter-spacing:.9px; color:var(--dim); font-weight:600; display:flex; justify-content:space-between; align-items:center; }
-  #led { width:11px; height:11px; border-radius:50%; background:#30363d; display:inline-block; margin-right:6px; vertical-align:-1px; }
-  #led.on { background:var(--gold); box-shadow:0 0 10px var(--gold); }
-  #trace { width:100%; height:64px; display:block; background:#0d1117; border-radius:6px; }
-  #panel { width:400px; display:flex; flex-direction:column; gap:14px; }
-  .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
-  button { background:#21262d; color:var(--txt); border:1px solid var(--line); border-radius:7px; padding:6px 12px; font:inherit; cursor:pointer; }
-  button:hover:not(:disabled) { border-color:#8b949e; background:#292f38; }
-  button:disabled { opacity:.4; cursor:default; }
-  button.danger:hover:not(:disabled) { border-color:var(--bad); }
-  input[type=range] { width:100%; accent-color:var(--gold); }
-  .zones { display:flex; height:6px; border-radius:3px; overflow:hidden; margin:2px 0 4px; }
-  .zones i { display:block; height:100%; }
-  .big { font-size:26px; font-weight:600; font-variant-numeric:tabular-nums; }
-  .sub { color:var(--dim); font-size:12px; }
-  .rem { display:flex; justify-content:space-between; align-items:center; gap:8px; padding:5px 0; border-top:1px solid var(--line); }
-  .rem:first-of-type { border-top:none; }
-  .rem .l { direction:rtl; font-size:15px; } .rem .t { color:var(--dim); font-variant-numeric:tabular-nums; }
-  #log { height:200px; overflow:auto; font:11.5px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace; background:#0d1117; border-radius:6px; padding:8px; white-space:pre-wrap; word-break:break-all; }
-  #log .m { color:var(--gold); } #log .s { color:#79c0ff; } #log .b { color:#a5d6a7; } #log .e { color:var(--bad); }
-  #banner { display:none; position:fixed; left:0; right:0; top:0; padding:8px; text-align:center; background:var(--warn); color:#000; font-weight:600; z-index:9; }
-  label.tg { display:flex; gap:6px; align-items:center; color:var(--dim); font-size:12px; cursor:pointer; }
+/* Same design system as docs/style.css (dark glassmorphism, Space
+   Grotesk/DM Sans/JetBrains Mono) but with a cool cyan chrome accent
+   instead of the browser build's warm gold — the two pages should never
+   be mistakable for each other. State colors (yellow=light sleep,
+   red=deep sleep/danger, teal=on/success) stay the same in both: those
+   are semantic, not brand, and should mean the same thing everywhere. */
+:root {
+  --bg-0: #05090c;
+  --glass: rgba(150, 210, 235, 0.045);
+  --glass-strong: rgba(150, 210, 235, 0.09);
+  --glass-border: rgba(150, 210, 235, 0.16);
+  --ink: #dff3fb;
+  --ink-dim: #8ba3ae;
+  --cream: #c7e6f0;
+  --accent: #45c8e8;
+  --accent-soft: #7ad9f0;
+  --teal: #33cc55;
+  --yellow: #ffcc33;
+  --red: #ff5c5c;
+  --heading: "Space Grotesk", var(--sans);
+  --sans: "DM Sans", -apple-system, "Segoe UI", sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, "SF Mono", Consolas, monospace;
+  --radius: 18px;
+}
+* { box-sizing: border-box; }
+html { background: var(--bg-0); }
+body {
+  margin: 0; min-height: 100vh; color: var(--cream); font-family: var(--sans); line-height: 1.5;
+  -webkit-font-smoothing: antialiased; overflow-x: hidden;
+  background-color: var(--bg-0);
+  background-image:
+    radial-gradient(36% 30% at 16% 6%, rgba(69, 200, 232, 0.30), transparent 68%),
+    radial-gradient(40% 36% at 88% 14%, rgba(51, 204, 85, 0.20), transparent 68%),
+    radial-gradient(45% 40% at 12% 60%, rgba(69, 200, 232, 0.14), transparent 70%),
+    radial-gradient(55% 48% at 55% 98%, rgba(69, 200, 232, 0.16), transparent 70%);
+  background-size: 160% 160%; background-attachment: fixed; background-position: 0% 0%;
+}
+@media (prefers-reduced-motion: no-preference) { body { animation: drift 30s ease-in-out infinite alternate; } }
+@keyframes drift { from { background-position: 0% 0%; } to { background-position: 18% 12%; } }
+a { color: var(--accent-soft); }
+:focus-visible { outline: 2px solid var(--accent-soft); outline-offset: 3px; border-radius: 4px; }
+code { font-family: var(--mono); }
+
+.wrap { max-width: 1220px; margin: 0 auto; padding: 0 20px; }
+
+#banner {
+  display: none; position: fixed; left: 0; right: 0; top: 0; z-index: 20;
+  padding: 10px; text-align: center; font-family: var(--mono); font-size: 13px; font-weight: 600;
+  background: var(--yellow); color: #1a1400;
+}
+
+/* ── header (a compact status bar, not a marketing hero -- this is a
+   dev tool) ─────────────────────────────────────────────────────── */
+header.top { text-align: center; padding: 28px 20px 16px; }
+header.top .eyebrow {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-family: var(--mono); font-size: 11.5px; letter-spacing: .14em; text-transform: uppercase;
+  color: var(--accent-soft); margin: 0 0 12px; padding: 5px 13px;
+  border: 1px solid rgba(69, 200, 232, .35); border-radius: 999px; background: rgba(69, 200, 232, .08);
+}
+header.top .eyebrow .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 8px var(--accent); }
+@media (prefers-reduced-motion: no-preference) { header.top .eyebrow .dot { animation: pulse-dot 2s ease-in-out infinite; } }
+@keyframes pulse-dot { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
+header.top h1 {
+  font-family: var(--heading); font-weight: 700; font-size: clamp(24px, 4.5vw, 34px); letter-spacing: -.02em;
+  margin: 0 0 16px;
+  background: linear-gradient(135deg, var(--ink) 20%, var(--accent-soft) 65%, var(--teal) 100%);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.status-row { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; font-family: var(--mono); font-size: 12px; }
+.chip { padding: 6px 13px; border-radius: 999px; background: var(--glass); border: 1px solid var(--glass-border); color: var(--ink-dim); white-space: nowrap; }
+.chip b { color: var(--cream); font-weight: 600; }
+.chip.light b { color: var(--yellow); } .chip.deep b { color: var(--red); }
+
+/* ── stage: watch centered, panels flanking (same pattern as the
+   browser build) -- equal-width panels, on purpose: unequal tracks
+   either break true centering or the two never line up with anything
+   else on the page. Learned that the hard way once already. ────── */
+main.stage {
+  display: grid; gap: 20px; padding: 8px 20px 48px;
+  grid-template-columns: 1fr; grid-template-areas: "watch" "left" "right";
+}
+@media (min-width: 700px) {
+  main.stage { grid-template-columns: 1fr 1fr; gap: 20px 24px; grid-template-areas: "watch watch" "left right"; }
+}
+@media (min-width: 1160px) {
+  main.stage {
+    grid-template-columns: minmax(340px, 1fr) minmax(320px, 360px) minmax(340px, 1fr);
+    align-items: start; gap: 28px; grid-template-areas: "left watch right";
+  }
+}
+.watch-col { grid-area: watch; display: flex; flex-direction: column; align-items: center; gap: 16px; }
+.panel-left { grid-area: left; } .panel-right { grid-area: right; }
+.panel { display: flex; flex-direction: column; gap: 18px; min-width: 0; width: 100%; }
+
+.watch-orbit { position: relative; width: 280px; height: 280px; display: flex; align-items: center; justify-content: center; margin: 0 auto; }
+@media (min-width: 480px) { .watch-orbit { width: 340px; height: 340px; } }
+.watch-orbit::before {
+  content: ""; position: absolute; inset: -6%; border-radius: 50%;
+  background: conic-gradient(from 0deg, var(--accent) 0%, transparent 22%, var(--teal) 45%, transparent 65%, var(--accent) 90%, transparent 100%);
+  filter: blur(28px); opacity: .55;
+}
+@media (prefers-reduced-motion: no-preference) { .watch-orbit::before { animation: spin 14s linear infinite; } }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.ring { position: absolute; inset: 8%; border-radius: 50%; border: 2px solid var(--accent-soft); box-shadow: 0 0 16px rgba(122, 217, 240, .5); opacity: 0; pointer-events: none; z-index: 2; }
+@media (prefers-reduced-motion: no-preference) { .ring.go { animation: pulse .7s cubic-bezier(.2,.7,.3,1); } }
+@keyframes pulse { from { opacity: .85; transform: scale(.9); } to { opacity: 0; transform: scale(1.5); } }
+
+#watch {
+  position: absolute; inset: 0; border-radius: 50%; will-change: transform;
+  background: linear-gradient(155deg, #263038, #0c0e10 55%, #16202a); padding: 16px;
+  box-shadow: 0 0 0 1px rgba(0,0,0,.6), 0 25px 60px -18px rgba(0,0,0,.8),
+              inset 0 0 0 2px rgba(69,200,232,.25), inset 0 2px 4px rgba(255,255,255,.08);
+}
+#crown { position: absolute; right: -6px; top: 44%; width: 12px; height: 15%; border-radius: 4px; background: linear-gradient(90deg,#3a444c,#6b7f8a,#3a444c); }
+#glass {
+  position: relative; width: 100%; height: 100%; border-radius: 50%; overflow: hidden; background: #000;
+  box-shadow: inset 0 0 0 3px #050505; touch-action: none; cursor: pointer;
+}
+#screen { width: 100%; height: 100%; display: block; }
+#dim { position: absolute; inset: 0; background: #000; pointer-events: none; transition: opacity .12s; }
+#sleepTag {
+  position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
+  text-align: center; pointer-events: none; font-family: var(--mono); font-size: 11px; letter-spacing: .04em; text-transform: uppercase;
+  color: var(--yellow); opacity: 0; transition: opacity .3s, color .3s;
+}
+#sleepTag.on { opacity: 1; }
+#sleepTag.deep { color: var(--red); }
+#sleepTag .cta { font-family: var(--sans); font-weight: 600; font-size: 12.5px; text-transform: none; letter-spacing: normal; }
+@media (prefers-reduced-motion: no-preference) { #sleepTag .cta { animation: tap-invite 1.8s ease-in-out infinite; } }
+@keyframes tap-invite { 0%, 100% { opacity: .55; } 50% { opacity: 1; } }
+
+.watch-hint { font-size: 13px; color: var(--ink-dim); text-align: center; max-width: 320px; display: flex; align-items: center; gap: 7px; justify-content: center; }
+.watch-hint svg { width: 15px; height: 15px; flex-shrink: 0; color: var(--accent-soft); opacity: .8; }
+.watch-hint b { color: var(--cream); font-weight: 600; }
+
+/* ── cards ─────────────────────────────────────────────────────── */
+.card {
+  background: var(--glass); border: 1px solid var(--glass-border); border-radius: var(--radius);
+  padding: 20px 22px; backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
+  box-shadow: 0 20px 40px -28px rgba(0,0,0,.7); transition: border-color .2s;
+}
+.card:hover { border-color: rgba(150, 210, 235, .26); }
+.card h2 {
+  margin: 0 0 14px; display: flex; align-items: center; gap: 9px; flex-wrap: wrap;
+  font-family: var(--heading); font-size: 13.5px; letter-spacing: .04em; text-transform: uppercase;
+  color: var(--ink); font-weight: 600;
+}
+.card h2 svg { width: 17px; height: 17px; color: var(--accent-soft); flex-shrink: 0; }
+.card h2 .sub { margin-left: auto; text-transform: none; letter-spacing: normal; font-family: var(--sans); font-weight: 500; font-size: 12px; }
+.sub { color: var(--ink-dim); font-size: 12px; }
+
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.big { font-family: var(--mono); font-size: 26px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--cream); }
+
+button {
+  font-family: var(--sans); font-weight: 600; font-size: 12.5px; padding: 10px 16px; min-height: 38px; border-radius: 999px;
+  border: 1px solid var(--glass-border); background: rgba(255,255,255,.03); color: var(--cream);
+  cursor: pointer; transition: border-color .15s, background .15s, transform .15s;
+}
+button:hover:not(:disabled) { border-color: var(--accent); background: rgba(69,200,232,.1); transform: translateY(-1px); }
+button:disabled { opacity: .4; cursor: default; transform: none; }
+button.danger:hover:not(:disabled) { border-color: var(--red); background: rgba(255,92,92,.1); color: #ffb3b3; }
+.presets button { padding: 8px 13px; min-height: 32px; font-family: var(--mono); }
+
+input[type=range] {
+  width: 100%; height: 6px; border-radius: 999px; appearance: none;
+  background: linear-gradient(90deg, var(--teal) 0%, var(--teal) var(--pct, 80%), rgba(255,255,255,.08) var(--pct, 80%));
+  outline-offset: 4px; margin: 10px 0 8px;
+}
+input[type=range]::-webkit-slider-thumb {
+  appearance: none; width: 18px; height: 18px; border-radius: 50%; background: var(--ink);
+  border: 3px solid var(--teal); box-shadow: 0 0 10px rgba(51,204,85,.6); cursor: pointer;
+}
+input[type=range]::-moz-range-thumb { width: 18px; height: 18px; border-radius: 50%; border: 3px solid var(--teal); background: var(--ink); box-shadow: 0 0 10px rgba(51,204,85,.6); cursor: pointer; }
+.zones { display: flex; height: 6px; border-radius: 3px; overflow: hidden; margin: 2px 0 8px; }
+.zones i { display: block; height: 100%; }
+
+/* Toggle switches for sound/haptics -- checkboxes under the hood */
+label.tg { display: inline-flex; align-items: center; gap: 8px; color: var(--ink-dim); font-size: 12.5px; cursor: pointer; }
+label.tg input[type=checkbox] {
+  appearance: none; width: 30px; height: 18px; border-radius: 999px; background: var(--glass-border);
+  border: none; cursor: pointer; position: relative; flex-shrink: 0; transition: background .15s;
+}
+label.tg input[type=checkbox]::before {
+  content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%;
+  background: var(--ink); transition: transform .15s;
+}
+label.tg input[type=checkbox]:checked { background: var(--accent); }
+label.tg input[type=checkbox]:checked::before { transform: translateX(12px); box-shadow: 0 0 6px rgba(69,200,232,.7); }
+
+#led { width: 11px; height: 11px; border-radius: 50%; background: var(--glass-border); display: inline-block; vertical-align: -1px; transition: background .08s, box-shadow .08s; }
+#led.on { background: var(--accent-soft); box-shadow: 0 0 12px var(--accent-soft); }
+#trace { width: 100%; height: 72px; display: block; border-radius: 10px; margin: 4px 0 12px; }
+
+.reminder-list-native { display: flex; flex-direction: column; gap: 8px; }
+.rem {
+  display: flex; justify-content: space-between; align-items: center; gap: 10px;
+  background: rgba(0,0,0,.18); border: 1px solid var(--glass-border); border-radius: 12px; padding: 10px 12px;
+  transition: border-color .15s, background .15s;
+}
+.rem:hover { border-color: rgba(150,210,235,.28); background: rgba(0,0,0,.28); }
+.rem .l { direction: rtl; font-size: 13.5px; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rem .t { font-family: var(--mono); font-size: 12px; color: var(--ink-dim); white-space: nowrap; }
+.rem button { padding: 7px 13px; min-height: 30px; font-size: 11.5px; border-color: rgba(69,200,232,.35); background: rgba(69,200,232,.08); color: var(--accent-soft); }
+.rem button:hover { background: rgba(69,200,232,.2); }
+
+/* ── log: its own full-width collapsible section, same reasoning as
+   the browser build -- it's diagnostic output, not a control. ──── */
+.log-section { padding: 0 20px 40px; }
+.log-card { padding: 0; overflow: hidden; }
+.log-card summary {
+  list-style: none; cursor: pointer; user-select: none; display: flex; align-items: center; gap: 9px;
+  padding: 16px 22px; font-family: var(--heading); font-size: 13.5px; letter-spacing: .04em; text-transform: uppercase;
+  color: var(--ink); font-weight: 600;
+}
+.log-card summary::-webkit-details-marker { display: none; }
+.log-card summary svg:first-child { width: 17px; height: 17px; color: var(--accent-soft); flex-shrink: 0; }
+.log-card summary .chevron { width: 16px; height: 16px; margin-left: auto; color: var(--ink-dim); transition: transform .2s; }
+.log-card[open] summary .chevron { transform: rotate(180deg); }
+.log-card summary:hover { background: rgba(150, 210, 235, .04); }
+#log {
+  font-family: var(--mono); font-size: 11.5px; line-height: 1.65; color: var(--ink-dim);
+  background: rgba(0,0,0,.28); border-top: 1px solid var(--glass-border); margin: 0 22px 20px; border-radius: 10px;
+  padding: 14px 16px; height: 220px; overflow: auto; white-space: pre-wrap; word-break: break-all;
+}
+#log::-webkit-scrollbar { width: 8px; } #log::-webkit-scrollbar-thumb { background: var(--glass-border); border-radius: 8px; }
+#log .m { color: var(--accent-soft); } #log .s { color: #79c0ff; } #log .b { color: var(--teal); } #log .e { color: var(--red); }
 </style>
 </head>
 <body>
 <div id="banner">Simulator not responding — restarting after deep sleep, or stopped?</div>
-<header>
-  <h1><span>◐</span> Tasbeeh Watch Simulator</h1>
-  <span class="chip" id="cMode">mode <b>—</b></span>
-  <span class="chip" id="cScreen">screen <b>—</b></span>
-  <span class="chip" id="cBl">backlight <b>—</b></span>
-  <span class="chip" id="cBoot">boot <b>—</b></span>
-  <span class="chip" id="cTime">clock <b>—</b></span>
+
+<header class="top wrap">
+  <p class="eyebrow"><span class="dot"></span> Native build &middot; local process, HTTP-polled</p>
+  <h1>Tasbeeh Watch, native simulator</h1>
+  <nav class="status-row">
+    <span class="chip" id="cMode">mode <b>—</b></span>
+    <span class="chip" id="cScreen">screen <b>—</b></span>
+    <span class="chip" id="cBl">backlight <b>—</b></span>
+    <span class="chip" id="cBoot">boot <b>—</b></span>
+    <span class="chip" id="cTime">clock <b>—</b></span>
+  </nav>
 </header>
-<main>
-  <section id="stage">
-    <div id="watchWrap">
+
+<main class="stage wrap">
+  <div class="watch-col">
+    <div class="watch-orbit">
       <div class="ring" id="r1"></div><div class="ring" id="r2"></div>
       <div id="watch">
         <div id="crown"></div>
@@ -79,64 +267,89 @@
         </div>
       </div>
     </div>
-    <div id="hint">click = tap · drag = swipe · hold ≈1s = long-press</div>
+    <p class="watch-hint">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 12.5V5.5a1.5 1.5 0 0 1 3 0v5M12 10.5v-2a1.5 1.5 0 0 1 3 0v3M15 11.5V10a1.5 1.5 0 0 1 3 0v5c0 3-2 6-6 6s-5.5-2-6.7-4.3L4 13a1.4 1.4 0 0 1 2.3-1.6L9 14"/></svg>
+      <span><b>Click</b> to tap, <b>drag</b> to swipe, <b>hold ~1s</b> for a long-press.</span>
+    </p>
+  </div>
 
-    <div class="card" id="motorCard">
-      <h2><span><span id="led"></span>Vibration motor <span id="motorPin" class="sub"></span></span>
-        <span class="row">
-          <label class="tg"><input type="checkbox" id="snd"> 🔊 buzz</label>
-          <label class="tg"><input type="checkbox" id="hap"> 📱 phone haptics</label>
-        </span></h2>
-      <canvas id="trace" width="800" height="128"></canvas>
-      <div class="row" style="margin-top:10px">
-        <button id="bBuzz">Test vibration pattern</button>
-        <span class="sub" id="vibNote"></span>
-      </div>
-    </div>
-  </section>
-
-  <section id="panel">
-    <div class="card">
-      <h2>Battery <span class="sub">drives lockdown mode</span></h2>
+  <div class="panel panel-left">
+    <section class="card">
+      <h2>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="18" height="10" rx="2"/><path d="M22 10v4"/></svg>
+        Battery <span class="sub">drives lockdown mode</span>
+      </h2>
       <div class="row" style="justify-content:space-between"><span class="big" id="batVal">—</span><span class="sub" id="batZone"></span></div>
       <input type="range" id="bat" min="0" max="100" value="80">
-      <div class="zones"><i style="width:5%;background:var(--bad)"></i><i style="width:5%;background:var(--warn)"></i><i style="width:90%;background:#238636"></i></div>
-      <div class="sub">enters lockdown &lt;5% · leaves it at ≥10% (hysteresis)</div>
-      <div class="row" style="margin-top:8px">
+      <div class="zones"><i style="width:5%;background:var(--red)"></i><i style="width:5%;background:var(--yellow)"></i><i style="width:90%;background:var(--teal)"></i></div>
+      <div class="sub">enters lockdown &lt;5% &middot; leaves it at &ge;10% (hysteresis)</div>
+      <div class="row presets" style="margin-top:10px">
         <button data-bat="100">100</button><button data-bat="50">50</button><button data-bat="19">19</button>
         <button data-bat="9">9</button><button data-bat="4">4</button><button data-bat="0">0</button>
       </div>
-    </div>
+    </section>
 
-    <div class="card">
-      <h2>Sleep &amp; wake</h2>
-      <div class="sub" style="margin-bottom:8px">Idle 15 s and the screen sleeps (light sleep). Touch the glass to wake, or force a wake source:</div>
+    <section class="card">
+      <h2>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>
+        Sleep &amp; wake
+      </h2>
+      <div class="sub" style="margin-bottom:10px">Idle 15s and the screen sleeps (light sleep). Touch the glass to wake, or force a wake source:</div>
       <div class="row">
-        <button id="bTimer" disabled>⏰ Timer wake</button>
-        <button id="bTouch" disabled>👆 Touch wake</button>
+        <button id="bTimer" disabled>Timer wake</button>
+        <button id="bTouch" disabled>Touch wake</button>
       </div>
-    </div>
+    </section>
 
-    <div class="card">
-      <h2>Reminders <span class="sub">fire = make it due now</span></h2>
-      <div id="rems" class="sub">—</div>
-    </div>
-
-    <div class="card">
-      <h2>Device</h2>
+    <section class="card">
+      <h2>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/></svg>
+        Device
+      </h2>
       <div class="row">
-        <button id="bReboot" class="danger">⟳ Power cycle</button>
-        <button id="bFactory" class="danger">⚠ Factory reset</button>
+        <button id="bReboot" class="danger">Power cycle</button>
+        <button id="bFactory" class="danger">Factory reset</button>
       </div>
-      <div class="sub" style="margin-top:8px">Settings, counters, reminders and the clock persist in <code>.sim_state/</code> like NVS.</div>
-    </div>
+      <div class="sub" style="margin-top:10px">Settings, counters, reminders and the clock persist in <code>.sim_state/</code> like NVS.</div>
+    </section>
+  </div>
 
-    <div class="card">
-      <h2>Firmware log <span class="sub">Serial output</span></h2>
-      <div id="log"></div>
-    </div>
-  </section>
+  <div class="panel panel-right">
+    <section class="card">
+      <h2>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="7" y="2" width="10" height="20" rx="3"/><path d="M2 8v8M22 8v8"/></svg>
+        Vibration motor <span class="sub" id="motorPin"></span>
+      </h2>
+      <div class="row" style="margin-bottom:2px"><span id="led"></span></div>
+      <canvas id="trace" width="800" height="128"></canvas>
+      <div class="row">
+        <button id="bBuzz">Test vibration pattern</button>
+        <label class="tg"><input type="checkbox" id="snd"> sound</label>
+        <label class="tg"><input type="checkbox" id="hap"> phone haptics</label>
+      </div>
+      <div class="sub" id="vibNote" style="margin-top:8px"></div>
+    </section>
+
+    <section class="card">
+      <h2>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+        Reminders <span class="sub">fire = make it due now</span>
+      </h2>
+      <div id="rems" class="reminder-list-native"><span class="sub">—</span></div>
+    </section>
+  </div>
 </main>
+
+<section class="wrap log-section">
+  <details class="card log-card" open>
+    <summary>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+      Firmware log <span class="sub">serial output</span>
+      <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+    </summary>
+    <div id="log"></div>
+  </details>
+</section>
 
 <script>
 const $ = id => document.getElementById(id);
@@ -190,17 +403,23 @@ function render(s) {
   $('cTime').innerHTML = 'clock <b>' + s.time + '</b>';
   const b = brightness(s);
   $('dim').style.opacity = 1 - b;
-  $('sleepTag').textContent = mode === 'deep' ? '💤 deep sleep — touch to reboot' : (b === 0 ? '💤 screen off — touch to wake' : '');
+  const tag = $('sleepTag');
+  tag.classList.toggle('on', mode !== 'awake');
+  tag.classList.toggle('deep', mode === 'deep');
+  tag.innerHTML = mode === 'deep' ? '<span>screen off &middot; deep sleep</span><span class="cta">touch to reboot</span>'
+                 : mode === 'light' ? '<span>screen off &middot; light sleep</span><span class="cta">touch to wake</span>'
+                 : '';
   $('bTimer').disabled = $('bTouch').disabled = mode === 'awake';
-  $('bat').value = s.battery; $('batVal').textContent = s.battery + '%';
-  $('batZone').textContent = s.battery < 5 ? '🔒 lockdown' : s.battery < 10 ? 'lockdown (until ≥10%)' : s.battery < 20 ? 'low' : 'normal';
+  $('bat').value = s.battery; $('bat').style.setProperty('--pct', s.battery + '%');
+  $('batVal').textContent = s.battery + '%';
+  $('batZone').textContent = s.battery < 5 ? 'lockdown' : s.battery < 10 ? 'lockdown (until ≥10%)' : s.battery < 20 ? 'low' : 'normal';
   $('motorPin').textContent = s.motor.pin >= 0 ? '(GPIO' + s.motor.pin + ')' : '(no motor configured — set VIBRATOR_ENABLED)';
   $('vibNote').textContent = s.vibEnabled ? '' : '"Vibration" switch is OFF in Notifications — pattern is suppressed';
   // reminders
   const key = JSON.stringify(s.reminders);
   if (key !== remsKey) {
     remsKey = key;
-    $('rems').innerHTML = s.reminders.map(r => `<div class="rem"><span class="l">${r.label}</span><span class="t">${String(r.h).padStart(2,'0')}:${String(r.m).padStart(2,'0')} ${r.on ? '● on' : '○ off'}</span><button data-fire="${r.i}">Fire</button></div>`).join('');
+    $('rems').innerHTML = s.reminders.map(r => `<div class="rem"><span class="l">${r.label}</span><span class="t">${String(r.h).padStart(2,'0')}:${String(r.m).padStart(2,'0')} ${r.on ? 'on' : 'off'}</span><button data-fire="${r.i}">Fire</button></div>`).join('');
   }
   // motor edges
   for (const e of s.edges) { edges.push(e); edgeSeq = Math.max(edgeSeq, e[0]); if (primed) onMotor(e[2]); }
@@ -229,7 +448,7 @@ glass.addEventListener('pointerup', up); glass.addEventListener('pointercancel',
 
 // ── controls ────────────────────────────────────────────
 const ctl = q => fetch('/ctl?' + q).catch(() => {});
-$('bat').addEventListener('input', e => ctl('battery=' + e.target.value));
+$('bat').addEventListener('input', e => { e.target.style.setProperty('--pct', e.target.value + '%'); ctl('battery=' + e.target.value); });
 document.querySelectorAll('[data-bat]').forEach(b => b.onclick = () => ctl('battery=' + b.dataset.bat));
 $('bTimer').onclick = () => ctl('wake=timer'); $('bTouch').onclick = () => ctl('wake=touch');
 $('bBuzz').onclick = () => ctl('buzz=1');
@@ -259,19 +478,19 @@ function simNow() { return S ? S.t + (performance.now() - tState) : 0; }
   else watch.style.transform = '';
   // motor pin trace — like a logic-analyser capture of the last 4 s
   const W = tr.width, H = tr.height, span = 4000, now = simNow();
-  tc.fillStyle = '#0d1117'; tc.fillRect(0, 0, W, H);
-  tc.strokeStyle = '#21262d'; tc.lineWidth = 1;
+  tc.fillStyle = '#070b0d'; tc.fillRect(0, 0, W, H);
+  tc.strokeStyle = 'rgba(150,210,235,.12)'; tc.lineWidth = 1;
   for (let i = 1; i < 8; i++) { const x = W - (i * 500 / span) * W; tc.beginPath(); tc.moveTo(x, 0); tc.lineTo(x, H); tc.stroke(); }
   const X = t => W - ((now - t) / span) * W, hi = 22, lo = H - 22;
   let level = 0, t0 = now - span;
   const list = edges.filter(e => e[1] >= now - span * 1.5);
   const pre = edges.filter(e => e[1] < now - span).pop(); if (pre) level = pre[2];
-  tc.beginPath(); tc.lineWidth = 2.5; tc.strokeStyle = '#d4af37';
+  tc.beginPath(); tc.lineWidth = 2.5; tc.strokeStyle = '#45c8e8';
   let x = 0, y = level ? hi : lo; tc.moveTo(x, y);
   for (const e of list) { if (e[1] < now - span) continue; x = X(e[1]); tc.lineTo(x, y); y = e[2] ? hi : lo; tc.lineTo(x, y); }
   tc.lineTo(W, motor ? hi : lo); tc.stroke();
-  if (motor) { tc.fillStyle = '#d4af3722'; tc.fillRect(0, 0, W, H); }
-  tc.fillStyle = '#8b949e'; tc.font = '20px system-ui'; tc.fillText('4 s', 8, 22); tc.fillText('now', W - 44, H - 8);
+  if (motor) { tc.fillStyle = 'rgba(69,200,232,.13)'; tc.fillRect(0, 0, W, H); }
+  tc.fillStyle = '#8ba3ae'; tc.font = '20px system-ui'; tc.fillText('4 s', 8, 22); tc.fillText('now', W - 44, H - 8);
   requestAnimationFrame(anim);
 })();
 </script>

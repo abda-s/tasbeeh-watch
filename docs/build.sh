@@ -58,7 +58,7 @@ LINKFLAGS=(
     -sEXPORT_ES6=0
     -sEXIT_RUNTIME=0
     -sEXPORTED_RUNTIME_METHODS='["ccall","cwrap","UTF8ToString","HEAPU16","FS"]'
-    -sEXPORTED_FUNCTIONS='["_main","_sim_web_frame_ptr","_sim_web_frame_seq","_sim_web_state_json","_sim_web_touch","_sim_web_set_battery","_sim_web_wake","_sim_web_fire","_sim_web_buzz","_sim_web_reboot","_sim_web_factory"]'
+    -sEXPORTED_FUNCTIONS='["_main","_sim_web_frame_ptr","_sim_web_frame_seq","_sim_web_state_json","_sim_web_touch","_sim_web_set_battery","_sim_web_wake","_sim_web_fire","_sim_web_buzz","_sim_web_reboot","_sim_web_factory","_sim_web_set_time","_sim_web_set_reminder"]'
     -lidbfs.js
     --pre-js "$OUT/pre.js"
 )

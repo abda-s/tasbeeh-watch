@@ -122,7 +122,7 @@ static void handle(int fd, const std::string &req) {
         if (q.count("battery")) sim.battery_pct = constrain(atoi(q["battery"].c_str()), 0, 100);
         if (q["wake"] == "timer") sim.wake_request = 1;
         if (q["wake"] == "touch") sim.wake_request = 2;
-        for (const char *k : {"fire", "buzz", "reboot", "factory"})
+        for (const char *k : {"fire", "buzz", "reboot", "factory", "settime", "setrem"})
             if (q.count(k)) sim_queue_action(std::string(k) + "=" + q[k]);
         respond(fd, 200, "application/json", "{\"ok\":1}");
     } else {

@@ -211,7 +211,7 @@ void vibrate(int pulse_ms, int gap_ms, int count) {
 }
 
 void vibrate_notification() {
-    vibrate(120, 100, 2);   // two short pulses
+    vibrate(200, 100, 5);   // five pulses, 200ms on / 100ms off
 }
 #else
 void vibrate_notification() { }

@@ -50,6 +50,17 @@ EMSCRIPTEN_KEEPALIVE
 void sim_web_fire(int idx) { sim_queue_action("fire=" + std::to_string(idx)); }
 
 EMSCRIPTEN_KEEPALIVE
+void sim_web_set_time(int hour, int minute) {
+    sim_queue_action("settime=" + std::to_string(hour) + ":" + std::to_string(minute));
+}
+
+EMSCRIPTEN_KEEPALIVE
+void sim_web_set_reminder(int idx, int hour, int minute, int enabled) {
+    sim_queue_action("setrem=" + std::to_string(idx) + ":" + std::to_string(hour) + ":" +
+                      std::to_string(minute) + ":" + std::to_string(enabled));
+}
+
+EMSCRIPTEN_KEEPALIVE
 void sim_web_buzz(void) { sim_queue_action("buzz=1"); }
 
 EMSCRIPTEN_KEEPALIVE

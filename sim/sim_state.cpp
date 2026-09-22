@@ -16,6 +16,21 @@
 extern int  hour_, minute_, second_;
 extern bool reminderFired[MAX_REMINDERS];
 extern bool reminderActive;
+extern void saveTime();   // main.cpp — not declared in screens.h, just like the externs above
+
+// Splits "a:b:c:..." into ints. Used by the settime=H:M and
+// setrem=IDX:H:M:EN action strings below.
+static std::vector<int> split_ints(const std::string &s) {
+    std::vector<int> out;
+    size_t i = 0;
+    while (i <= s.size()) {
+        size_t colon = s.find(':', i);
+        if (colon == std::string::npos) colon = s.size();
+        out.push_back(atoi(s.substr(i, colon - i).c_str()));
+        i = colon + 1;
+    }
+    return out;
+}
 
 static std::vector<std::string> pending;   // queued actions, applied at safe points
 
@@ -93,6 +108,24 @@ void sim_apply_actions() {
             resetClockTick();
             if (sim.mode == SimState::LIGHT) sim.wake_request = 1;          // timer wake -> checkReminders()
             char b[96]; snprintf(b, sizeof b, "[SIM] reminder %d due now (%02d:%02d)", i, hour_, minute_); sim_log(b);
+        } else if (k == "settime") {
+            auto p = split_ints(v);
+            if (p.size() < 2) continue;
+            hour_ = constrain(p[0], 0, 23); minute_ = constrain(p[1], 0, 59); second_ = 0;
+            resetClockTick();
+            saveTime();
+            char b[64]; snprintf(b, sizeof b, "[SIM] clock set to %02d:%02d", hour_, minute_); sim_log(b);
+        } else if (k == "setrem") {
+            auto p = split_ints(v);
+            if (p.size() < 4) continue;
+            int i = p[0];
+            if (i < 0 || i >= MAX_REMINDERS || !reminders[i].label[0]) continue;
+            reminders[i].hour = constrain(p[1], 0, 23);
+            reminders[i].minute = constrain(p[2], 0, 59);
+            reminders[i].enabled = p[3] != 0;
+            reminderFired[i] = false;   // a retimed/re-enabled reminder shouldn't be suppressed by an earlier fire today
+            saveReminders();
+            char b[96]; snprintf(b, sizeof b, "[SIM] reminder %d set to %02d:%02d, %s", i, reminders[i].hour, reminders[i].minute, reminders[i].enabled ? "on" : "off"); sim_log(b);
         } else if (k == "buzz") {
             sim_log("[SIM] vibrate_notification() test");
             vibrate_notification();
