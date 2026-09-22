@@ -7,78 +7,108 @@
 <meta name="description" content="The real Tasbeeh Smartwatch firmware, compiled to WebAssembly and running live in your browser — no hardware needed.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
-<div id="loading" class="loading"><span>booting firmware&hellip;</span></div>
+<div id="loading" class="loading"><span class="spinner"></span><span>booting firmware&hellip;</span></div>
 
 <header class="hero wrap">
-  <p class="eyebrow">Real firmware &middot; compiled to WebAssembly</p>
-  <h1>Tasbeeh Smartwatch, live in your browser</h1>
-  <p>
-    This isn't a mockup. It's the exact ESP32-S3 firmware from the
-    <a href="https://github.com/abda-s/tasbeeh-watch">GitHub repository</a> — the same source that runs on the
-    physical watch — compiled to WebAssembly and running unmodified right here. Tap the watch, swipe
-    between screens, or use the panel to jump straight to a reminder or drop the battery.
+  <p class="eyebrow"><span class="dot"></span> Real firmware &middot; compiled to WebAssembly</p>
+  <h1>Tasbeeh Smartwatch,<br>live in your browser</h1>
+  <p class="lede">
+    Not a mockup, not a video — the exact ESP32-S3 firmware from the repository, the same source that
+    runs on the physical watch, compiled straight to WebAssembly. Tap it, swipe it, fire a reminder.
   </p>
-  <div class="links">
-    <a href="https://github.com/abda-s/tasbeeh-watch" target="_blank" rel="noopener">Source on GitHub</a>
-    <a href="../sim/README.md">Desktop simulator</a>
-    <a href="../power_profiler/README.md">Power profiler</a>
-  </div>
+  <a class="cta" href="#stage">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polygon points="6 3 20 12 6 21 6 3"/></svg>
+    Launch the watch
+  </a>
+  <p class="cta-note">Nothing installed. Nothing uploaded. It all runs in this tab.</p>
+
+  <nav class="links">
+    <a href="https://github.com/abda-s/tasbeeh-watch" target="_blank" rel="noopener">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5C5.65.5.5 5.65.5 12a11.5 11.5 0 0 0 7.86 10.93c.58.1.79-.25.79-.56v-2.17c-3.2.7-3.87-1.36-3.87-1.36-.53-1.33-1.28-1.69-1.28-1.69-1.05-.72.08-.7.08-.7 1.16.08 1.77 1.2 1.77 1.2 1.03 1.76 2.7 1.25 3.36.96.1-.75.4-1.25.73-1.53-2.56-.29-5.25-1.28-5.25-5.7 0-1.26.45-2.28 1.19-3.08-.12-.3-.52-1.5.11-3.12 0 0 .97-.31 3.18 1.18a11 11 0 0 1 5.79 0c2.2-1.5 3.17-1.18 3.17-1.18.64 1.62.24 2.82.12 3.12.74.8 1.18 1.82 1.18 3.08 0 4.43-2.7 5.4-5.27 5.68.42.36.78 1.07.78 2.16v3.2c0 .31.21.67.8.56A11.5 11.5 0 0 0 23.5 12C23.5 5.65 18.35.5 12 .5Z"/></svg>
+      Source
+    </a>
+    <a href="https://github.com/abda-s/tasbeeh-watch/blob/main/sim/README.md" target="_blank" rel="noopener">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M7 20h10M9 14l3-3 3 3M8 9h1M8 6h8"/></svg>
+      Desktop simulator
+    </a>
+    <a href="https://github.com/abda-s/tasbeeh-watch/blob/main/power_profiler/README.md" target="_blank" rel="noopener">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2 4 14h6l-1 8 9-12h-6l1-8Z"/></svg>
+      Power profiler
+    </a>
+    <a href="https://github.com/abda-s/tasbeeh-watch/blob/main/documentation/README.md" target="_blank" rel="noopener">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z"/></svg>
+      Documentation
+    </a>
+  </nav>
 </header>
 
-<main class="stage wrap">
+<main id="stage" class="stage wrap">
   <div class="watch-col">
-    <div class="watch-case">
-      <div class="watch-bezel">
-        <canvas id="watch-canvas" width="240" height="240"></canvas>
+    <div class="watch-orbit">
+      <div class="watch-case">
+        <div class="watch-bezel">
+          <canvas id="watch-canvas" width="240" height="240"></canvas>
+        </div>
       </div>
     </div>
     <div id="watch-status" class="watch-status"></div>
-    <p class="watch-hint">Click/drag on the face to tap or swipe between screens, just like the real touchscreen.</p>
+    <p class="watch-hint">Click / drag on the face to tap or swipe between screens, just like the real touchscreen.</p>
   </div>
 
   <div class="panel">
     <section class="card">
-      <h2>Battery</h2>
+      <h2><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="18" height="10" rx="2"/><path d="M22 10v4"/></svg>Battery</h2>
       <div class="battery-row">
-        <input id="battery-input" type="range" min="0" max="100" value="80">
+        <input id="battery-input" type="range" min="0" max="100" value="80" style="--pct:80%">
         <output id="battery-output">80%</output>
       </div>
     </section>
 
     <section class="card">
-      <h2>Reminders</h2>
+      <h2><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>Reminders</h2>
       <div id="reminder-list" class="reminder-list"></div>
     </section>
 
     <section class="card">
-      <h2>Quick actions</h2>
+      <h2><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2 4 14h6l-1 8 9-12h-6l1-8Z"/></svg>Quick actions</h2>
       <div class="actions">
-        <button id="btn-buzz" class="btn">Test vibration</button>
-        <button id="btn-reboot" class="btn">Power cycle</button>
-        <button id="btn-factory" class="btn danger">Factory reset</button>
+        <button id="btn-buzz" class="btn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="7" y="2" width="10" height="20" rx="3"/><path d="M2 8v8M22 8v8"/></svg>
+          Test vibration
+        </button>
+        <button id="btn-reboot" class="btn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/></svg>
+          Power cycle
+        </button>
+        <button id="btn-factory" class="btn danger">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2m3 0-1 14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2L4 6"/></svg>
+          Factory reset
+        </button>
       </div>
-      <div class="motor-indicator" style="margin-top:14px">
+      <div class="motor-indicator">
         <span id="motor-dot" class="motor-dot"></span>
         <span id="motor-label">not yet toggled</span>
       </div>
     </section>
 
     <section class="card">
-      <h2>Serial log</h2>
+      <h2><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>Serial log</h2>
       <div id="log-panel" class="log-panel"></div>
     </section>
   </div>
 </main>
 
 <footer>
-  Built on the same firmware as the <a href="../sim/README.md">desktop simulator</a> and the
-  <a href="../documentation/README.md">full documentation</a>. Nothing here is uploaded anywhere —
-  it all runs locally in this tab.
+  Built on the same firmware as the
+  <a href="https://github.com/abda-s/tasbeeh-watch/blob/main/sim/README.md" target="_blank" rel="noopener">desktop simulator</a>
+  and the
+  <a href="https://github.com/abda-s/tasbeeh-watch/blob/main/documentation/README.md" target="_blank" rel="noopener">full documentation</a>.
+  Nothing here is uploaded anywhere — it all runs locally in this tab.
 </footer>
 
 <script src="watch.js"></script>

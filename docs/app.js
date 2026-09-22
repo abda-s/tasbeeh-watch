@@ -67,6 +67,7 @@
       `<span>${state.screen}</span>`;
 
     battInput.value = state.battery;
+    battInput.style.setProperty("--pct", state.battery + "%");
     battOutput.textContent = state.battery + "%";
 
     for (const r of state.reminders) {
@@ -132,6 +133,7 @@
 
   // ── control panel wiring ────────────────────────────────────────────
   battInput.addEventListener("input", () => {
+    battInput.style.setProperty("--pct", battInput.value + "%");
     battOutput.textContent = battInput.value + "%";
     Module.ccall("sim_web_set_battery", null, ["number"], [parseInt(battInput.value, 10)]);
   });
