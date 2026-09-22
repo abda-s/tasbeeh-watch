@@ -21,6 +21,7 @@ Technical documentation for the Tasbeeh Smartwatch firmware. For an overview of 
 | Location | What's there |
 |---|---|
 | [`../sim/README.md`](../sim/README.md) | The desktop simulator — how it works and what it fakes |
+| [`../docs/README.md`](../docs/README.md) | The browser simulator (WebAssembly) behind the [live demo](https://abda-s.github.io/tasbeeh-watch/) |
 | [`../datasheets/`](../datasheets/) | Board schematic and component datasheets (ESP32-S3, GC9A01A, CST816S, QMI8658A) |
 | [`../power_profiler/`](../power_profiler/README.md) | The INA226 power profiler used for the measurements in [Power Management](power-management.md) |
 | [`screenshots/`](screenshots/) | Screenshots used in the README, captured from the simulator |

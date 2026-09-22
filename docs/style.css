@@ -1,0 +1,157 @@
+/* Dark, developer-tool chrome around the watch — but the accent colors are
+   the firmware's own palette (src/ui/styles.cpp), not a generic dev-tool
+   blue/green, so the page and the product it's showing off feel related. */
+:root {
+  --bg: #0b1410;
+  --surface: #10201a;
+  --card: #142822;
+  --border: #23392f;
+  --ink: #f6e6b3;       /* color_ivory */
+  --ink-dim: #a9b8ad;
+  --cream: #e9d9a8;     /* color_cream */
+  --gold: #d4af37;      /* color_gold */
+  --teal: #33cc55;      /* color_teal */
+  --red: #ff5c5c;
+  --mono: "JetBrains Mono", ui-monospace, "SF Mono", Consolas, monospace;
+  --sans: "IBM Plex Sans", -apple-system, "Segoe UI", sans-serif;
+}
+
+* { box-sizing: border-box; }
+html { background: var(--bg); }
+body {
+  margin: 0;
+  background: radial-gradient(ellipse 1200px 700px at 50% -10%, #16261e 0%, var(--bg) 60%);
+  color: var(--cream);
+  font-family: var(--sans);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+a { color: var(--gold); }
+
+.wrap { max-width: 1080px; margin: 0 auto; padding: 0 20px; }
+
+/* ── hero ─────────────────────────────────────────────────────── */
+.hero { text-align: center; padding: 48px 20px 24px; }
+.hero .eyebrow {
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--teal);
+  margin: 0 0 10px;
+}
+.hero h1 { font-size: clamp(28px, 5vw, 40px); margin: 0 0 12px; color: var(--ink); }
+.hero p { max-width: 640px; margin: 0 auto; color: var(--ink-dim); font-size: 15px; }
+.hero .links { margin-top: 18px; display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; font-family: var(--mono); font-size: 13px; }
+.hero .links a { text-decoration: none; border: 1px solid var(--border); padding: 7px 14px; border-radius: 8px; color: var(--cream); transition: border-color .15s, color .15s; }
+.hero .links a:hover { border-color: var(--gold); color: var(--gold); }
+
+/* ── stage: watch + panel ────────────────────────────────────────*/
+.stage {
+  display: grid;
+  grid-template-columns: minmax(260px, 340px) 1fr;
+  gap: 28px;
+  align-items: start;
+  padding: 12px 20px 40px;
+}
+@media (max-width: 780px) {
+  .stage { grid-template-columns: 1fr; justify-items: center; }
+}
+
+.watch-col { display: flex; flex-direction: column; align-items: center; gap: 16px; position: sticky; top: 20px; }
+.watch-case {
+  width: 300px; height: 300px;
+  border-radius: 50%;
+  background: linear-gradient(155deg, #2b2b2b, #0e0e0e 55%, #1c1c1c);
+  padding: 16px;
+  box-shadow: 0 0 0 1px #000, 0 20px 50px -15px rgba(0,0,0,.7), inset 0 0 0 2px #3a3a3a;
+  position: relative;
+}
+.watch-bezel {
+  width: 100%; height: 100%; border-radius: 50%;
+  overflow: hidden;
+  background: #000;
+  box-shadow: inset 0 0 0 3px #050505;
+  cursor: pointer;
+  touch-action: none;
+}
+#watch-canvas { width: 100%; height: 100%; display: block; }
+
+.watch-status {
+  font-family: var(--mono); font-size: 12px; color: var(--ink-dim);
+  display: flex; gap: 14px; flex-wrap: wrap; justify-content: center;
+}
+.watch-status b { color: var(--cream); font-weight: 600; }
+.watch-hint { font-size: 12px; color: var(--ink-dim); text-align: center; max-width: 260px; }
+
+/* ── control panel ───────────────────────────────────────────────*/
+.panel { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px 18px;
+}
+.card h2 {
+  margin: 0 0 12px;
+  font-size: 12px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+  font-family: var(--mono);
+  font-weight: 600;
+}
+
+.battery-row { display: flex; align-items: center; gap: 12px; }
+.battery-row input[type=range] { flex: 1; accent-color: var(--teal); }
+.battery-row output { font-family: var(--mono); width: 4ch; text-align: right; color: var(--cream); }
+
+.reminder-list { display: flex; flex-direction: column; gap: 8px; }
+.reminder-row {
+  display: flex; align-items: center; gap: 10px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+  padding: 8px 10px;
+}
+.reminder-row .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--border); flex-shrink: 0; }
+.reminder-row.on .dot { background: var(--teal); box-shadow: 0 0 6px var(--teal); }
+.reminder-row .label { flex: 1; font-size: 13px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.reminder-row .time { font-family: var(--mono); font-size: 12px; color: var(--ink-dim); }
+.reminder-row button {
+  font-family: var(--mono); font-size: 11px; padding: 5px 10px; border-radius: 6px;
+  border: 1px solid var(--border); background: transparent; color: var(--gold); cursor: pointer;
+  transition: background .15s;
+}
+.reminder-row button:hover { background: rgba(212,175,55,.12); }
+.reminder-row button:disabled { opacity: .4; cursor: default; }
+
+.actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.btn {
+  font-family: var(--mono); font-size: 12px; padding: 9px 14px; border-radius: 8px;
+  border: 1px solid var(--border); background: var(--surface); color: var(--cream);
+  cursor: pointer; transition: border-color .15s, color .15s;
+}
+.btn:hover { border-color: var(--gold); color: var(--gold); }
+.btn.danger:hover { border-color: var(--red); color: var(--red); }
+
+.motor-indicator { display: flex; align-items: center; gap: 10px; font-family: var(--mono); font-size: 12px; color: var(--ink-dim); }
+.motor-dot { width: 14px; height: 14px; border-radius: 50%; background: var(--border); transition: background .08s, box-shadow .08s; }
+.motor-dot.buzz { background: var(--gold); box-shadow: 0 0 12px var(--gold); }
+
+.log-panel {
+  font-family: var(--mono); font-size: 11.5px; line-height: 1.6; color: var(--ink-dim);
+  background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+  padding: 10px 12px; height: 160px; overflow-y: auto; white-space: pre-wrap; word-break: break-all;
+}
+.log-panel .fresh { color: var(--teal); }
+
+footer { text-align: center; padding: 30px 20px 50px; color: var(--ink-dim); font-size: 13px; }
+footer a { color: var(--cream); }
+
+.loading {
+  position: fixed; inset: 0; background: var(--bg); z-index: 10;
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--mono); color: var(--ink-dim); font-size: 13px; gap: 10px;
+  transition: opacity .3s;
+}
+.loading.hidden { opacity: 0; pointer-events: none; }

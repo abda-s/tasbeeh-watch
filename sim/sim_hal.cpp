@@ -18,6 +18,43 @@
 #include <sys/stat.h>
 #include <limits.h>
 
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+// docs/ (the browser build): no process to block, no env vars, no execv.
+// sim_state_dir() below points at a fixed path an IDBFS mount backs (see
+// docs/wasm_main.cpp), so ordinary fopen()/fwrite() — the NVS and RTC code
+// further down, unchanged — just works. These three replace getenv(): the
+// "boot flags" a real reload can't pass any other way.
+EM_JS(int, js_get_deepwake, (), {
+    try { var v = localStorage.getItem('sim_deepwake'); return (v === null || v === "") ? -1 : parseInt(v, 10); }
+    catch (e) { return -1; }
+});
+EM_JS(int, js_get_boot_id, (), {
+    try { var v = localStorage.getItem('sim_boot_id'); return v === null ? 1 : parseInt(v, 10); }
+    catch (e) { return 1; }
+});
+EM_JS(int, js_get_battery, (), {
+    try { var v = localStorage.getItem('sim_battery'); return v === null ? -1 : parseInt(v, 10); }
+    catch (e) { return -1; }
+});
+EM_JS(void, js_set_boot_flags, (int has_deepwake, int deepwake_cause, int boot_id, int battery_pct), {
+    try {
+        if (has_deepwake) localStorage.setItem('sim_deepwake', deepwake_cause); else localStorage.removeItem('sim_deepwake');
+        localStorage.setItem('sim_boot_id', boot_id);
+        localStorage.setItem('sim_battery', battery_pct);
+    } catch (e) {}
+});
+// autoPersist (mount option, docs/wasm_main.cpp) covers ongoing writes; this
+// forces one last flush to IndexedDB before the reload that stands in for a
+// deep-sleep reboot actually lands, so nothing written in the same tick as
+// the reload call is lost to its async persistence.
+EM_JS(void, js_syncfs_then_reload, (), {
+    try {
+        FS.syncfs(false, function () { location.reload(); });
+    } catch (e) { location.reload(); }
+});
+#endif
+
 SimState sim;
 SimSerial Serial;
 TwoWire   Wire;
@@ -40,9 +77,16 @@ std::string sim_root() {
     return root;
 }
 std::string sim_state_dir() {
+#ifdef __EMSCRIPTEN__
+    // Fixed virtual path — docs/wasm_main.cpp mounts IDBFS here before main()
+    // runs (via preRun + addRunDependency), so no real "project root" to
+    // locate; sim_root()'s executable-path walk doesn't apply in a browser.
+    return "/sim_state";
+#else
     std::string d = sim_root() + "/.sim_state";
     mkdir(d.c_str(), 0755);
     return d;
+#endif
 }
 
 // ── serial → stdout + web log ring ──────────────────────────────────────
@@ -88,10 +132,20 @@ void delay(unsigned long ms) {
     for (;;) {
         sim_pump();
         if (millis() - t0 >= ms) break;
+#ifdef __EMSCRIPTEN__
+        emscripten_sleep(1);
+#else
         usleep(500);
+#endif
     }
 }
-void delayMicroseconds(unsigned int us) { usleep(us); }
+void delayMicroseconds(unsigned int us) {
+#ifdef __EMSCRIPTEN__
+    (void)us;   // sub-millisecond: not worth a yield, and emscripten_sleep(0) still unwinds the stack
+#else
+    usleep(us);
+#endif
+}
 
 // ESP32's RTC-backed system clock keeps counting through deep sleep; here that
 // is "real clock + offset", with the offset carried across the restart in a file.
@@ -284,7 +338,13 @@ esp_err_t esp_light_sleep_start(void) {
         if (sim.wake_request == 1) { cause = ESP_SLEEP_WAKEUP_TIMER; break; }
         if (sim.wake_request == 2 || (sim.gpio_wake_armed && sim.touch_down)) { cause = ESP_SLEEP_WAKEUP_GPIO; break; }
         if (sim.timer_us && (uint64_t)(millis() - t0) * 1000ull >= sim.timer_us) { cause = ESP_SLEEP_WAKEUP_TIMER; break; }
+#ifdef __EMSCRIPTEN__
+        emscripten_sleep(2);   // Asyncify: returns control to the browser event
+                                // loop and resumes here — usleep() would just
+                                // freeze the tab (no OS thread to block on)
+#else
         usleep(2000);
+#endif
     }
     sim.wake_request = 0;
     sim.last_wake = cause;
@@ -310,6 +370,22 @@ static void rtc_load() {
     fclose(f);
 }
 
+#ifdef __EMSCRIPTEN__
+// A real ESP32 restarts through the bootloader on deep-sleep wake or power
+// cycle; a browser tab's equivalent is location.reload(), which unloads
+// everything and re-runs the wasm module's own init from scratch. What
+// process restart carried across (RTC bytes via exec-preserved file
+// handles, the three boot flags via env vars) crosses the reload via
+// IDBFS-backed files and localStorage instead — see the EM_JS helpers above.
+[[noreturn]] void sim_restart(int wake_cause, bool deep_sleep, bool clear_rtc) {
+    fflush(stdout);
+    if (clear_rtc) { unlink(rtc_path().c_str()); unlink((sim_state_dir() + "/rtc_offset.txt").c_str()); }
+    else if (deep_sleep) rtc_save();
+    js_set_boot_flags(deep_sleep ? 1 : 0, wake_cause, sim.boot_id + 1, sim.battery_pct);
+    js_syncfs_then_reload();
+    for (;;) emscripten_sleep(1000);   // reload is in flight; idle until it lands
+}
+#else
 static int    saved_argc; static char **saved_argv;
 static std::string exe_path;   // real path of this binary, resolved once at startup
 [[noreturn]] void sim_restart(int wake_cause, bool deep_sleep, bool clear_rtc) {
@@ -323,6 +399,7 @@ static std::string exe_path;   // real path of this binary, resolved once at sta
     perror("execv");
     exit(1);
 }
+#endif
 
 [[noreturn]] void esp_deep_sleep_start(void) {
     sim.mode = SimState::DEEP;
@@ -335,17 +412,38 @@ static std::string exe_path;   // real path of this binary, resolved once at sta
         if (sim.wake_request == 1) { cause = ESP_SLEEP_WAKEUP_TIMER; break; }
         if (sim.wake_request == 2 || (sim.ext0_armed && sim.touch_down)) { cause = ESP_SLEEP_WAKEUP_EXT0; break; }
         if (sim.timer_us && (uint64_t)(millis() - t0) * 1000ull >= sim.timer_us) { cause = ESP_SLEEP_WAKEUP_TIMER; break; }
+#ifdef __EMSCRIPTEN__
+        emscripten_sleep(2);
+#else
         usleep(2000);
+#endif
     }
     sim_restart(cause, true, false);
 }
 
 // ── init ────────────────────────────────────────────────────────────────
 void sim_init(int argc, char **argv) {
+#ifndef __EMSCRIPTEN__
     saved_argc = argc; saved_argv = argv;
     { char b[PATH_MAX]; ssize_t n = readlink("/proc/self/exe", b, sizeof b - 1); exe_path = n > 0 ? std::string(b, n) : std::string(argv[0]); }
+#else
+    (void)argc; (void)argv;
+#endif
     setvbuf(stdout, NULL, _IOLBF, 0);
     memset(sim.fb, 0, sizeof sim.fb);
+#ifdef __EMSCRIPTEN__
+    int b = js_get_battery(); if (b >= 0) sim.battery_pct = b;
+    sim.boot_id = js_get_boot_id();
+    int dw = js_get_deepwake();
+    if (dw >= 0) {
+        sim.from_deep = true;
+        sim.env_wake = dw;
+        sim.last_wake = dw;
+        rtc_load();
+        FILE *f = fopen((sim_state_dir() + "/rtc_offset.txt").c_str(), "r");
+        if (f) { if (fscanf(f, "%lf", &rtc_offset_s) != 1) rtc_offset_s = 0; fclose(f); }
+    }
+#else
     if (const char *b = getenv("SIM_BATTERY")) sim.battery_pct = atoi(b);
     if (const char *b = getenv("SIM_BOOT_ID")) sim.boot_id = atoi(b);
     if (const char *w = getenv("SIM_DEEPWAKE")) {
@@ -357,4 +455,5 @@ void sim_init(int argc, char **argv) {
         if (f) { if (fscanf(f, "%lf", &rtc_offset_s) != 1) rtc_offset_s = 0; fclose(f); }
     }
     (void)saved_argc;
+#endif
 }

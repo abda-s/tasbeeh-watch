@@ -14,6 +14,10 @@
 
 <img src="documentation/screenshots/hero.png" alt="Home, Istighfar and Tasbeeh screens" width="760">
 
+### [▶ Try it live in your browser — no install, nothing uploaded](https://abda-s.github.io/tasbeeh-watch/)
+
+The real firmware, compiled to WebAssembly. Tap it, swipe it, fire a reminder — right on this page.
+
 <p>
   <a href="#about">About</a> ·
   <a href="#features">Features</a> ·
@@ -62,7 +66,9 @@ reminds on daily routines (water, handwashing, homework, teeth, bedtime) with a 
 - **5 preset reminders** — per-reminder on/off, time, days, popup, optional vibration.
 - **Power management** — display sleep, real light sleep, deep sleep, and a <5% battery lockdown (this
   board has no hardware over-discharge protection).
-- **Desktop simulator** — runs the real firmware in a browser tab, no board needed.
+- **Two simulators** — a [live browser demo](https://abda-s.github.io/tasbeeh-watch/) (WebAssembly,
+  no install) and a [local dev version](sim/README.md) with a scriptable control panel. No board needed
+  for either.
 
 ## Screenshots
 
@@ -103,12 +109,17 @@ If the board isn't detected, enter download mode first: hold **BOOT**, press **R
 
 ### Try it without hardware
 
+**No install:** [abda-s.github.io/tasbeeh-watch](https://abda-s.github.io/tasbeeh-watch/) —
+the same firmware, compiled to WebAssembly, running in the page. See [`docs/README.md`](docs/README.md).
+
+**Local dev version**, with a scriptable HTTP control panel for testing (battery slider, reminders,
+sleep/wake, vibration visualizer):
+
 ```bash
 ./sim/run.sh          # then open http://localhost:8080
 ```
 
-Browser control panel — battery slider, reminders, sleep/wake, vibration visualizer. Needs `g++` and
-PlatformIO. See [`sim/README.md`](sim/README.md).
+Needs `g++` and PlatformIO. See [`sim/README.md`](sim/README.md).
 
 ## Hardware
 
@@ -185,6 +196,7 @@ python profiler.py               # pick the INA226 (and optionally ESP32 log) po
 ```
 ├── src/                  Firmware — main.cpp, ui/ (screens), config/, generated fonts
 ├── sim/                  Desktop simulator (mock hardware layer + browser front-end)
+├── docs/                 Browser simulator — same firmware compiled to WebAssembly, hosted on GitHub Pages
 ├── documentation/        Technical documentation and screenshots
 ├── datasheets/           Schematic and component datasheets
 ├── power_profiler/       INA226 power profiler — desktop app, sensor firmware, captured logs
@@ -210,6 +222,7 @@ Everything technical lives in [`documentation/`](documentation/README.md):
 | [Hardware](documentation/hardware.md) | Board, display, touch, battery and charger details |
 | [Build & Configuration](documentation/build-and-configuration.md) | Building, dependencies, LVGL settings, library patches |
 | [Simulator](sim/README.md) | How the desktop simulator works and what it fakes |
+| [Browser Simulator](docs/README.md) | The WebAssembly build behind the live demo, and why it needed one |
 | [Power Profiler](power_profiler/README.md) | The INA226 measurement rig and desktop app used for all the power numbers |
 
 ## Roadmap

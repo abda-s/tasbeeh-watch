@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tasbeeh Smartwatch — Live Simulator</title>
+<meta name="description" content="The real Tasbeeh Smartwatch firmware, compiled to WebAssembly and running live in your browser — no hardware needed.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div id="loading" class="loading"><span>booting firmware&hellip;</span></div>
+
+<header class="hero wrap">
+  <p class="eyebrow">Real firmware &middot; compiled to WebAssembly</p>
+  <h1>Tasbeeh Smartwatch, live in your browser</h1>
+  <p>
+    This isn't a mockup. It's the exact ESP32-S3 firmware from the
+    <a href="https://github.com/abda-s/tasbeeh-watch">GitHub repository</a> — the same source that runs on the
+    physical watch — compiled to WebAssembly and running unmodified right here. Tap the watch, swipe
+    between screens, or use the panel to jump straight to a reminder or drop the battery.
+  </p>
+  <div class="links">
+    <a href="https://github.com/abda-s/tasbeeh-watch" target="_blank" rel="noopener">Source on GitHub</a>
+    <a href="../sim/README.md">Desktop simulator</a>
+    <a href="../power_profiler/README.md">Power profiler</a>
+  </div>
+</header>
+
+<main class="stage wrap">
+  <div class="watch-col">
+    <div class="watch-case">
+      <div class="watch-bezel">
+        <canvas id="watch-canvas" width="240" height="240"></canvas>
+      </div>
+    </div>
+    <div id="watch-status" class="watch-status"></div>
+    <p class="watch-hint">Click/drag on the face to tap or swipe between screens, just like the real touchscreen.</p>
+  </div>
+
+  <div class="panel">
+    <section class="card">
+      <h2>Battery</h2>
+      <div class="battery-row">
+        <input id="battery-input" type="range" min="0" max="100" value="80">
+        <output id="battery-output">80%</output>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Reminders</h2>
+      <div id="reminder-list" class="reminder-list"></div>
+    </section>
+
+    <section class="card">
+      <h2>Quick actions</h2>
+      <div class="actions">
+        <button id="btn-buzz" class="btn">Test vibration</button>
+        <button id="btn-reboot" class="btn">Power cycle</button>
+        <button id="btn-factory" class="btn danger">Factory reset</button>
+      </div>
+      <div class="motor-indicator" style="margin-top:14px">
+        <span id="motor-dot" class="motor-dot"></span>
+        <span id="motor-label">not yet toggled</span>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Serial log</h2>
+      <div id="log-panel" class="log-panel"></div>
+    </section>
+  </div>
+</main>
+
+<footer>
+  Built on the same firmware as the <a href="../sim/README.md">desktop simulator</a> and the
+  <a href="../documentation/README.md">full documentation</a>. Nothing here is uploaded anywhere —
+  it all runs locally in this tab.
+</footer>
+
+<script src="watch.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

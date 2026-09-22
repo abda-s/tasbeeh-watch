@@ -8,3 +8,9 @@ power_profiler/**/__pycache__/
 
 # desktop simulator runtime state (fake NVS + RTC memory)
 .sim_state/
+
+# browser simulator (docs/): LVGL source fetched by build.sh when there's no
+# .pio/libdeps to reuse. watch.js/watch.wasm ARE committed (GitHub Pages
+# serves them as-is, no build step) -- only this fetched dependency isn't.
+docs/.lvgl-cache/
+compile_commands.json
