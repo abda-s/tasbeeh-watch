@@ -11,10 +11,50 @@ Log lines are drawn as red markers on the power graph at the exact time they
 were received, so you can see *which firmware event caused which current
 spike*.
 
+<p align="center">
+  <img src="screenshots/hardware-with-ui.jpg" alt="The profiler hardware next to its desktop UI" width="640"><br>
+  <sub>The sensor module next to the desktop app, mid-measurement.</sub>
+</p>
+
+## Hardware
+
+<table>
+  <tr>
+    <td width="52%"><img src="screenshots/hardware-module.jpg" alt="Arduino Nano, INA226 and OLED on a perfboard"></td>
+    <td valign="top">
+      <ul>
+        <li><b>INA226</b> current/voltage sensor (I²C address <code>0x40</code>) with a 10&nbsp;mΩ shunt (<code>R010</code>) — the blue screw terminals are the in-line <code>INPUT</code> / <code>OUTPUT</code> the device under test is wired through</li>
+        <li><b>Arduino Nano</b> reads the sensor and prints <code>voltage,current</code> lines over USB serial</li>
+        <li><b>0.96″ SSD1306 OLED</b> (I²C <code>0x3C</code>, yellow / blue bands) shows live volts and mA, so the module doubles as a standalone meter</li>
+      </ul>
+      Sketch: <a href="firmware/ina226_timed.ino"><code>firmware/ina226_timed.ino</code></a>
+    </td>
+  </tr>
+</table>
+
+## Screenshots
+
+Captured while profiling the watch firmware — the full history is in the project's
+[Power Management](../documentation/power-management.md) notes.
+
+<table>
+  <tr>
+    <td align="center"><img src="screenshots/v1-screen-off.png" alt="V1, screen off"><br><sub><b>V1</b> · screen off, WiFi on — 51 mA average</sub></td>
+    <td align="center"><img src="screenshots/v1-screen-on-wifi.png" alt="V1, screen on"><br><sub><b>V1</b> · screen on, WiFi bursts — 90 mA average</sub></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="screenshots/v1.22-screen-on.png" alt="V1.22, screen on"><br><sub><b>V1.22</b> · screen on at 80 MHz — 43 mA average</sub></td>
+    <td align="center"><img src="screenshots/v1.3-light-sleep.png" alt="V1.3, light sleep"><br><sub><b>V1.3</b> · light sleep — ~5 mA floor, screen-on stretch highlighted</sub></td>
+  </tr>
+  <tr>
+    <td align="center" colspan="2"><img src="screenshots/charging-near-full.png" alt="Charging curve near full" width="60%"><br><sub><b>Charging</b> · current tapering off as the battery nears full, with <code>[WAKE]</code> markers from the ESP32 log</sub></td>
+  </tr>
+</table>
+
 ## Setup (Ubuntu)
 
 ```bash
-cd scripts/power_profiler
+cd power_profiler
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
